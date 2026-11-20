@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>viceplay.cloud — Jogue GTA VI Ao Vivo no PS5 por Hora</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Topo Direto e Limpo -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">viceplay<span class="brand-accent">.cloud</span></span>
+        <span class="badge-live" id="top-status-badge">
+          <span class="pulse-dot"></span> <span id="top-status-text">PS5 Online • 14ms • Sessão Ao Vivo</span>
+        </span>
+      </div>
+
+      <!-- Login Rápido 1-Clique (Discord ou Google) + Link Admin -->
+      <div class="auth-area" id="auth-area">
+        <button class="btn-auth btn-discord" id="btn-login-discord" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+          </svg>
+          <span>Discord</span>
+        </button>
+        <button class="btn-auth btn-google" id="btn-login-google" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 15.65 5 12c0-3.65 3.36-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81Z"/>
+          </svg>
+          <span>Google</span>
+        </button>
+        <a href="/admin" class="btn-admin-link" title="Painel de Controle do PS5">⚙️ Admin</a>
+      </div>
+
+      <!-- Perfil Logado -->
+      <div class="user-pill hidden" id="user-pill">
+        <span class="user-avatar" id="user-avatar">DC</span>
+        <div class="user-meta">
+          <span class="user-name" id="user-name">Jogador</span>
+          <span class="user-provider" id="user-provider">Sessão Vinculada</span>
+        </div>
+        <button class="btn-logout" id="btn-logout" type="button">Trocar</button>
+        <a href="/admin" class="btn-admin-link">⚙️</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- TELA AO VIVO DO PS5 (Para todo mundo ver o jogo rodando na página inicial!) -->
+    <section class="live-stage-section" aria-label="Transmissão Ao Vivo do PS5">
+      <div class="live-stage-card">
+        <div class="live-stage-topbar">
+          <div class="live-title-group">
+            <span class="live-pill-red"><span class="live-dot-blink"></span> AO VIVO • VICEPLAY.CLOUD</span>
+            <h2 id="live-stream-title">AO VIVO em viceplay.cloud • Sessão GTA VI PS5 #01</h2>
+          </div>
+          <div class="live-telemetry-pills">
+            <span class="tele-chip" id="live-player-status">🎮 Console Livre p/ Assumir</span>
+            <span class="tele-chip">👁️ <strong id="live-viewers-count">18</strong> assistindo</span>
+            <span class="tele-chip">⚡ 4K 60FPS • 14ms</span>
+          </div>
+        </div>
+
+        <!-- Tela 16:9 onde o jogo roda ao vivo (Iframe / WebRTC / Stream configurável no /admin) -->
+        <div class="live-screen-viewport" id="live-screen-viewport">
+          <iframe
+            id="ps5-live-iframe"
+            src="https://www.youtube.com/embed/QdBZY2fkU-0?autoplay=1&mute=1&loop=1&playlist=QdBZY2fkU-0&controls=1&rel=0"
+            title="Transmissão Ao Vivo PS5 GTA VI"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          ></iframe>
+
+          <!-- Overlay sutil com botão rápido para assumir o controle -->
+          <div class="live-overlay-bar">
+            <div class="overlay-info">
+              <span class="overlay-tag">MESMA SESSÃO CONTÍNUA</span>
+              <span id="overlay-session-desc">Todo mundo vê e joga na mesma sessão do GTA VI em tempo real.</span>
+            </div>
+            <div class="overlay-actions">
+              <button type="button" class="btn-fullscreen-toggle" id="btn-fullscreen-stream">⛶ Tela Cheia</button>
+              <a href="#checkout-area" class="btn-take-control">🎮 Assumir o Controle do PS5</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cabeçalho de Preços + Alternador PIX / Crypto -->
+    <section class="compact-hero">
+      <div class="hero-left">
+        <span class="eyebrow">ESCOLHA SEU TEMPO DE CONTROLE • BASE R$ 1,95 / 10 MIN</span>
+        <h1>Assuma o controle do <span class="gradient-text">GTA VI</span> agora</h1>
+      </div>
+
+      <!-- Alternador Rápido PIX vs Crypto (-15% OFF) -->
+      <div class="payment-toggle-card" role="group" aria-label="Moeda de exibição">
+        <button type="button" class="pay-mode-btn active" id="toggle-show-pix">
+          <span>PIX Instantâneo</span>
+        </button>
+        <button type="button" class="pay-mode-btn" id="toggle-show-crypto">
+          <span>⚡ Crypto</span>
+          <span class="discount-chip">-15% OFF</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Cards de Combos (Engenharia McDonald's: Âncora -> Chamariz -> Combo Campeão -> VIP) -->
+    <section class="pricing-grid" aria-label="Pacotes de Tempo">
+      <!-- Card 1: 10 Min (Âncora R$ 1,95) -->
+      <article class="price-card" data-pkg="trial_10m">
+        <div>
+          <span class="tier-tag">TESTE RÁPIDO</span>
+          <h3>10 Minutos</h3>
+          <div class="price-block">
+            <div class="price-main" id="card-price-trial_10m" data-base-price="1.95">R$ 1,95</div>
+            <div class="price-rate">R$ 1,95 / 10 min (Tarifa Base)</div>
+          </div>
+          <ul class="feature-list">
+            <li><span>✓</span> Assuma o controle na hora</li>
+            <li class="muted"><span>✕</span> Sem minutos de bônus</li>
+          </ul>
+        </div>
+        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="trial_10m">
+          Escolher 10 Min
+        </button>
+      </article>
+
+      <!-- Card 2: 2 Horas (Efeito Chamariz / Decoy - R$ 22,50) -->
+      <article class="price-card decoy-card" data-pkg="decoy_2h">
+        <div>
+          <span class="tier-tag">SESSÃO MÉDIA</span>
+          <h3>2 Horas <span class="sub-mins">(120m)</span></h3>
+          <div class="price-block">
+            <div class="price-old">De R$ 23,40</div>
+            <div class="price-main" id="card-price-decoy_2h" data-base-price="22.50">R$ 22,50</div>
+            <div class="price-rate">Sai a R$ 1,87 / 10 min</div>
+          </div>
+          <div class="upsell-nudge">
+            🍟 Por só <strong>+R$ 2,40</strong> você leva o <strong>Combo 3 Horas (+75 min extras!)</strong>
+          </div>
+        </div>
+        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="decoy_2h">
+          Escolher 2 Horas
+        </button>
+      </article>
+
+      <!-- Card 3: 3 Horas (O "Big Mac Combo" - R$ 24,90 com +15m grátis) -->
+      <article class="price-card featured-card active-card" data-pkg="combo_3h">
+        <div class="popular-ribbon">🔥 MAIS VENDIDO • MELHOR ESCOLHA</div>
+        <div>
+          <span class="tier-tag tag-gold">COMBO HEIST LEONIDA</span>
+          <h3>3 Horas <span class="bonus-inline">+15m Grátis</span></h3>
+          <div class="price-block">
+            <div class="price-old">Avulso: R$ 35,10</div>
+            <div class="price-main" id="card-price-combo_3h" data-base-price="24.90">R$ 24,90</div>
+            <div class="price-rate text-green">Cai para <strong>R$ 1,28 / 10 min</strong> (-34%)</div>
+          </div>
+          <ul class="feature-list">
+            <li><span>★</span> <strong>195 min contínuos</strong> na sessão</li>
+            <li><span>★</span> Prioridade máxima sem fila</li>
+          </ul>
+        </div>
+        <button type="button" class="btn-select-pkg btn-featured" data-select-pkg="combo_3h">
+          Combo Selecionado ✓
+        </button>
+      </article>
+
+      <!-- Card 4: 6 Horas (Maratona VIP - R$ 38,90 com +30m grátis) -->
+      <article class="price-card" data-pkg="pass_6h">
+        <div>
+          <span class="tier-tag tag-cyan">PASSAPORTE MADRUGADA</span>
+          <h3>6 Horas <span class="bonus-inline">+30m Grátis</span></h3>
+          <div class="price-block">
+            <div class="price-old">Avulso: R$ 70,20</div>
+            <div class="price-main" id="card-price-pass_6h" data-base-price="38.90">R$ 38,90</div>
+            <div class="price-rate text-green">Cai para <strong>R$ 1,00 / 10 min</strong> (-49%)</div>
+          </div>
+          <ul class="feature-list">
+            <li><span>✓</span> <strong>390 min direto</strong> na mesma sessão</li>
+            <li><span>✓</span> 4K HDR Ultra + Suporte VIP</li>
+          </ul>
+        </div>
+        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="pass_6h">
+          Escolher 6 Horas
+        </button>
+      </article>
+    </section>
+
+    <!-- Painel Direto: Simulador + Checkout em uma única visão -->
+    <section id="checkout-area" class="calc-layout">
+      <!-- Esquerda: Ajuste Fino de Tempo + Order Bump 1-Clique -->
+      <div class="calc-panel">
+        <div class="slider-header">
+          <div>
+            <span class="eyebrow">AJUSTE SEU TEMPO (OU USE OS COMBOS ACIMA)</span>
+            <div class="time-row">
+              <span class="slider-time-big" id="slider-time-display">3h 00min</span>
+              <span class="slider-bonus-tag" id="slider-bonus-display">+15 min bônus grátis</span>
+            </div>
+          </div>
+          <div class="slider-rate-box">
+            <span class="rate-lbl">Preço por 10 min:</span>
+            <span class="rate-val" id="slider-rate-10m">R$ 1,28</span>
+          </div>
+        </div>
+
+        <input
+          type="range"
+          id="time-slider"
+          min="10"
+          max="360"
+          step="10"
+          value="180"
+          aria-label="Selecionar tempo em minutos"
+        />
+
+        <div class="slider-Ticks">
+          <span>10m (R$1,95)</span>
+          <span>1h (R$11,70)</span>
+          <span>2h (R$22,50)</span>
+          <span class="tick-highlight">★ 3h Combo (R$24,90)</span>
+          <span>6h VIP (R$38,90)</span>
+        </div>
+
+        <!-- Gatilho Dinâmico McDonald's -->
+        <div class="smart-upsell-alert" id="smart-upsell-box">
+          <div class="upsell-icon">🍟</div>
+          <div class="upsell-text" id="smart-upsell-text">
+            <strong>Combo 3 Horas Ativo!</strong> Você economiza <strong>R$ 10,20</strong> e ganha <strong>+15 min grátis</strong>.
+          </div>
+          <button type="button" class="btn-upsell-jump hidden" id="btn-upsell-upgrade">
+            Aplicar Combo
+          </button>
+        </div>
+
+        <!-- Order Bump de 1 Clique ("Batata Grande por +R$ 3,50") -->
+        <label class="order-bump-card" for="chk-order-bump">
+          <input type="checkbox" id="chk-order-bump" />
+          <div class="bump-content">
+            <div class="bump-header">
+              <span class="bump-badge">OFERTA DE 1 CLIQUE • 40% OFF</span>
+              <span class="bump-price" id="bump-price-display">+ R$ 3,50</span>
+            </div>
+            <h4>Adicionar +30 Minutos Extras na Mesma Sessão</h4>
+            <p>De R$ 5,85 por apenas <strong>R$ 3,50</strong>. Garanta meia hora extra direto na sua sessão atual para não parar no meio da missão!</p>
+          </div>
+        </label>
+      </div>
+
+      <!-- Direita: Checkout Rápido (Login + Pix/Crypto + Botão Jogar) -->
+      <aside class="checkout-panel">
+        <div class="checkout-header">
+          <h3>Liberar Controle do PS5</h3>
+          <span class="secure-pill">🔒 Anti-Fraude Ativo</span>
+        </div>
+
+        <!-- 1. Conta rápida -->
+        <div class="checkout-step">
+          <div id="checkout-auth-prompt" class="checkout-auth-box">
+            <span class="auth-hint">1. Vincule seu Discord ou Google para liberar sua cota e o PIN da sessão:</span>
+            <div class="checkout-auth-btns">
+              <button type="button" class="btn-auth-full btn-discord" id="chk-btn-discord">
+                Conectar Discord
+              </button>
+              <button type="button" class="btn-auth-full btn-google" id="chk-btn-google">
+                Conectar Google
+              </button>
+            </div>
+          </div>
+          <div id="checkout-auth-logged" class="checkout-logged-box hidden">
+            <span class="logged-check">✓</span>
+            <div>
+              <strong id="chk-user-label">usuario#0001</strong>
+              <span class="logged-sub">Cota de tempo e PIN vinculados à sessão</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Forma de Pagamento -->
+        <div class="checkout-step">
+          <div class="pay-selector">
+            <label class="pay-option selected" id="lbl-pay-pix">
+              <input type="radio" name="paymentMethod" value="pix" checked />
+              <div class="pay-opt-body">
+                <span class="pay-opt-title">PIX Instantâneo</span>
+                <span class="pay-opt-sub">Libera em 3 segundos</span>
+              </div>
+            </label>
+
+            <label class="pay-option" id="lbl-pay-usdt">
+              <input type="radio" name="paymentMethod" value="usdt" />
+              <div class="pay-opt-body">
+                <div class="pay-opt-row">
+                  <span class="pay-opt-title">Crypto</span>
+                  <span class="crypto-badge-sm">15% OFF</span>
+                </div>
+                <span class="pay-opt-sub">USDT, BTC ou Solana</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="crypto-coins hidden" id="crypto-coins-bar">
+            <button type="button" class="coin-btn active" data-coin="usdt">USDT</button>
+            <button type="button" class="coin-btn" data-coin="btc">BTC (Lightning)</button>
+            <button type="button" class="coin-btn" data-coin="sol">Solana</button>
+          </div>
+        </div>
+
+        <!-- Resumo Final Direto -->
+        <div class="receipt-box">
+          <div class="receipt-row">
+            <span id="receipt-pkg-name">Combo 3 Horas (+15m Grátis)</span>
+            <span id="receipt-pkg-price">R$ 24,90</span>
+          </div>
+          <div class="receipt-row" id="receipt-bonus-row">
+            <span class="text-green">Bônus do Combo (+15 min)</span>
+            <span class="text-green">GRÁTIS</span>
+          </div>
+          <div class="receipt-row hidden" id="receipt-bump-row">
+            <span>Boost +30 Minutos Extras</span>
+            <span id="receipt-bump-val">+ R$ 3,50</span>
+          </div>
+          <div class="receipt-row hidden text-green" id="receipt-crypto-row">
+            <span>Desconto Crypto (15% OFF)</span>
+            <span id="receipt-crypto-discount">- R$ 3,74</span>
+          </div>
+          <div class="receipt-divider"></div>
+          <div class="receipt-total-row">
+            <div>
+              <span class="total-lbl">Tempo Liberado</span>
+              <strong class="total-time-val" id="receipt-total-time">3h 15min (195 min)</strong>
+            </div>
+            <div class="total-price-col">
+              <span class="total-lbl">Total a Pagar</span>
+              <strong class="total-price-val" id="receipt-total-price">R$ 24,90</strong>
+              <span class="total-usdt-val hidden" id="receipt-total-usdt">≈ 4.23 USDT</span>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="btn-checkout-submit" id="btn-submit-order">
+          Gerar PIX / Crypto e Assumir o Controle
+        </button>
+      </aside>
+    </section>
+  </main>
+
+  <!-- Modal Login Rápido (Discord / Google) -->
+  <div class="modal-backdrop hidden" id="auth-modal" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="auth-modal-title">Vincular Conta</h3>
+        <button type="button" class="btn-close-modal" id="btn-close-auth">✕</button>
+      </div>
+      <p class="modal-desc">Digite seu usuário para vincular sua cota de tempo e receber o PIN de acesso ao PS5:</p>
+      <form id="auth-form">
+        <input type="hidden" id="auth-provider-input" value="discord" />
+        <label class="form-label" for="auth-handle-input" id="auth-handle-label">Seu Discord</label>
+        <input
+          type="text"
+          id="auth-handle-input"
+          class="form-input"
+          placeholder="Ex: jogador_gta6"
+          required
+          maxlength="50"
+          autocomplete="off"
+        />
+        <button type="submit" class="btn-primary btn-full">Confirmar e Continuar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Fatura PIX / Crypto + PIN do PS5 -->
+  <div class="modal-backdrop hidden" id="order-modal" role="dialog" aria-modal="true">
+    <div class="modal-card order-modal-card">
+      <div class="modal-header">
+        <div>
+          <span class="badge-live">PEDIDO VALIDADO</span>
+          <h3 id="order-modal-title">Fatura #VC-0000</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-order">✕</button>
+      </div>
+
+      <div class="order-summary-strip">
+        <div>
+          <span class="strip-lbl">Pacote</span>
+          <strong id="modal-pkg-name">Combo 3 Horas</strong>
+        </div>
+        <div>
+          <span class="strip-lbl">Tempo Total</span>
+          <strong id="modal-total-time" class="text-green">195 min</strong>
+        </div>
+        <div>
+          <span class="strip-lbl">Total</span>
+          <strong id="modal-final-price">R$ 24,90</strong>
+        </div>
+      </div>
+
+      <div class="payment-payload-box">
+        <span class="payload-label" id="modal-payload-label">Código PIX Copia e Cola:</span>
+        <div class="payload-code-row">
+          <input type="text" id="modal-payload-input" class="form-input code-input" readonly />
+          <button type="button" class="btn-copy" id="btn-copy-payload">Copiar</button>
+        </div>
+      </div>
+
+      <div class="pin-preview-box">
+        <span class="pin-title">🎮 PIN PS5 Remote Play & Link Direto:</span>
+        <div class="pin-digits" id="modal-access-pin">••••••</div>
+        <a href="#" target="_blank" id="modal-parsec-link" class="parsec-direct-link hidden">🚀 Abrir Conexão Direta Parsec/PS5</a>
+        <span class="pin-sub" id="modal-user-bound">Conta: —</span>
+      </div>
+
+      <button type="button" class="btn-primary btn-full" id="btn-simulate-paid">
+        Simular Pagamento Confirmado e Assumir PS5
+      </button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
