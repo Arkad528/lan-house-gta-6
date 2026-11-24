@@ -412,11 +412,19 @@
     $('order-title').textContent = `Pedido #${order.orderId}`;
     $('o-plan').textContent = order.packageName;
     $('o-time').textContent = duration(order.totalMinutes);
-    $('o-total').textContent = order.isCrypto ? `${money(order.finalPriceBRL)} · ${order.finalUSDT} USDT` : money(order.finalPriceBRL);
+    $('o-total').textContent = order.isCrypto
+      ? order.cryptoPayAmount
+        ? `${order.cryptoPayAmount} ${order.cryptoPayCurrency}`
+        : `${money(order.finalPriceBRL)} · ${order.finalUSDT} USDT`
+      : money(order.finalPriceBRL);
     $('order-method-label').textContent = order.isCrypto
-      ? `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}`
-      : 'Pague com PIX copia e cola';
-    $('o-code-label').textContent = order.isCrypto ? `Carteira ${order.paymentMethod.toUpperCase()}` : 'PIX copia e cola';
+      ? order.cryptoPayAmount
+        ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency} para o endereço abaixo`
+        : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}`
+      : 'Pague com PIX copia e cola ou QR Code';
+    $('o-code-label').textContent = order.isCrypto
+      ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}`
+      : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
     const qrBox = $('o-qr-box');
     const qrImg = $('o-qr-img');

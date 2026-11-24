@@ -87,6 +87,16 @@
       ? '•••••••••• (já configurado — digite só para trocar)'
       : 'APP_USR-... ou TEST-...';
 
+    $('cfg-np-key').value = '';
+    $('cfg-np-key').placeholder = data.nowPayments
+      ? '•••••••••• (já configurado — digite só para trocar)'
+      : 'API Key NOWPayments';
+
+    $('cfg-np-ipn').value = '';
+    $('cfg-np-ipn').placeholder = data.nowPaymentsIpnConfigured
+      ? '•••••••••• (já configurado — digite só para trocar)'
+      : 'IPN Secret Key (opcional)';
+
     $('cfg-pix').value = c.pixKey || '';
     $('cfg-pix-name').value = c.pixName || '';
     $('cfg-pix-city').value = c.pixCity || '';
@@ -102,7 +112,8 @@
     oauthBox.replaceChildren(
       el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado (.env)'}`),
       el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado (.env)'}`),
-      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo (automático)' : 'não configurado (.env)'}`),
+      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo (automático)' : 'não configurado'}`),
+      el('span', `pill ${data.nowPayments ? 'pill-green' : 'pill-amber'}`, `NOWPayments Crypto: ${data.nowPayments ? 'ativo (automático)' : 'não configurado'}`),
       el('span', `pill ${data.demoMode ? 'pill-cyan' : ''}`, `Modo teste: ${data.demoMode ? 'ligado' : 'desligado'}`)
     );
 
@@ -178,6 +189,10 @@
       mercadoPago: {
         publicKey: $('cfg-mp-public').value.trim(),
         accessToken: $('cfg-mp-token').value.trim()
+      },
+      nowPayments: {
+        apiKey: $('cfg-np-key').value.trim(),
+        ipnSecret: $('cfg-np-ipn').value.trim()
       },
       prices: {
         trial_10m: parseFloat($('p-10m').value),

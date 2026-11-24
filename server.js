@@ -39,11 +39,14 @@ const ENV = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN || '',
   MP_PUBLIC_KEY: process.env.MP_PUBLIC_KEY || '',
+  NOWPAYMENTS_API_KEY: process.env.NOWPAYMENTS_API_KEY || '',
+  NOWPAYMENTS_IPN_SECRET: process.env.NOWPAYMENTS_IPN_SECRET || '',
   DEMO_MODE: process.env.DEMO_MODE !== 'false',
   TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
 };
 
 const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
+const npEnabled = () => !!ENV.NOWPAYMENTS_API_KEY;
 
 let SECRET = process.env.SESSION_SECRET || '';
 if (!SECRET) {
@@ -353,6 +356,90 @@ async function syncMercadoPagoPayment(order) {
 }
 
 // ---------------------------------------------------------------------------
+// NOWPayments API v1 (Crypto Automático: USDT TRC20, BTC, SOL + IPN/Polling)
+// ---------------------------------------------------------------------------
+const NP_CURRENCY_MAP = {
+  usdt: 'usdttrc20',
+  btc: 'btc',
+  sol: 'sol'
+};
+
+async function createNowPaymentsCrypto(req, order) {
+  const payCurrency = NP_CURRENCY_MAP[order.paymentMethod] || 'usdttrc20';
+  const baseUrl = getBaseUrl(req);
+  const body = {
+    price_amount: Number(order.finalPriceBRL.toFixed(2)),
+    price_currency: 'brl',
+    pay_currency: payCurrency,
+    order_id: order.orderId,
+    order_description: `viceplay.cloud - ${order.packageName}`
+  };
+
+  if (baseUrl.startsWith('https://') && !baseUrl.includes('localhost')) {
+    body.ipn_callback_url = `${baseUrl}/api/webhooks/nowpayments`;
+  }
+
+  const r = await fetch('https://api.nowpayments.io/v1/payment', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ENV.NOWPAYMENTS_API_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000)
+  });
+
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.pay_address) {
+    console.error('[viceplay] NOWPayments erro:', r.status, JSON.stringify(data));
+    throw new Error(data.message || 'Erro ao gerar pagamento Crypto na NOWPayments.');
+  }
+
+  return {
+    npPaymentId: String(data.payment_id),
+    cryptoWallet: String(data.pay_address),
+    cryptoPayAmount: data.pay_amount !== undefined ? String(data.pay_amount) : null,
+    cryptoPayCurrency: String(data.pay_currency || payCurrency).toUpperCase()
+  };
+}
+
+async function syncNowPaymentsPayment(order) {
+  if (!npEnabled() || !order || !order.npPaymentId || order.status !== 'pending') return;
+  const now = Date.now();
+  if (order.lastNpCheck && now - order.lastNpCheck < 4000) return;
+  order.lastNpCheck = now;
+
+  try {
+    const r = await fetch(`https://api.nowpayments.io/v1/payment/${encodeURIComponent(order.npPaymentId)}`, {
+      headers: { 'x-api-key': ENV.NOWPAYMENTS_API_KEY },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.payment_status === 'finished' || data.payment_status === 'confirmed') {
+      enqueueOrActivate(order);
+    } else if (['failed', 'refunded', 'expired'].includes(data.payment_status)) {
+      order.status = 'expired';
+    }
+  } catch (err) {
+    console.error('[viceplay] Falha ao consultar NOWPayments:', err.message);
+  }
+}
+
+function verifyNowPaymentsIpn(bodyObj, sigHeader) {
+  if (!ENV.NOWPAYMENTS_IPN_SECRET) return true;
+  if (!sigHeader) return false;
+  const sorted = Object.keys(bodyObj || {})
+    .sort()
+    .reduce((acc, k) => {
+      acc[k] = bodyObj[k];
+      return acc;
+    }, {});
+  const expected = crypto.createHmac('sha512', ENV.NOWPAYMENTS_IPN_SECRET).update(JSON.stringify(sorted)).digest('hex');
+  return safeEqual(sigHeader, expected);
+}
+
+// ---------------------------------------------------------------------------
 // Fila
 // ---------------------------------------------------------------------------
 function startSession(order) {
@@ -492,6 +579,8 @@ function publicOrder(o) {
     isCrypto: o.isCrypto,
     paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
     pixQrBase64: o.isCrypto ? null : o.pixQrBase64 || null,
+    cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
+    cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
     queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
     estimatedWaitMinutes: queueIdx >= 0 ? summary.items[queueIdx].estimatedWaitMinutes : null,
     remainingSeconds: isActive ? ps5Config.activePlayer.remainingSeconds : null,
@@ -748,8 +837,11 @@ async function handler(req, res) {
         status: 'pending',
         ...calc,
         mpPaymentId: null,
+        npPaymentId: null,
         pixPayload: '',
         pixQrBase64: null,
+        cryptoPayAmount: null,
+        cryptoPayCurrency: null,
         cryptoWallet: calc.paymentMethod === 'btc' ? ps5Config.walletBtc : calc.paymentMethod === 'sol' ? ps5Config.walletSol : ps5Config.walletUsdt
       };
 
@@ -762,6 +854,12 @@ async function handler(req, res) {
         } else {
           order.pixPayload = buildPixPayload(calc.finalPriceBRL, orderId);
         }
+      } else if (npEnabled()) {
+        const np = await createNowPaymentsCrypto(req, order);
+        order.npPaymentId = np.npPaymentId;
+        order.cryptoWallet = np.cryptoWallet;
+        order.cryptoPayAmount = np.cryptoPayAmount;
+        order.cryptoPayCurrency = np.cryptoPayCurrency;
       }
 
       orders.set(orderId, order);
@@ -772,8 +870,28 @@ async function handler(req, res) {
       if (!user) return sendJson(res, 401, { error: 'login' });
       const o = orders.get(String(url.searchParams.get('id') || ''));
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
-      await syncMercadoPagoPayment(o);
+      if (o.isCrypto) await syncNowPaymentsPayment(o);
+      else await syncMercadoPagoPayment(o);
       return sendJson(res, 200, { ok: true, order: publicOrder(o) });
+    }
+
+    // Webhook IPN oficial da NOWPayments (confirma Crypto automaticamente)
+    if (req.method === 'POST' && p === '/api/webhooks/nowpayments') {
+      if (!npEnabled()) return sendJson(res, 200, { ok: true });
+      const body = await readJson(req).catch(() => ({}));
+      if (!verifyNowPaymentsIpn(body, req.headers['x-nowpayments-sig'])) {
+        return sendJson(res, 403, { error: 'Assinatura IPN inválida.' });
+      }
+      const npId = String(body.payment_id || '');
+      const target =
+        orders.get(String(body.order_id || '')) ||
+        (npId ? [...orders.values()].find((o) => o.npPaymentId === npId) : null);
+      if (target) {
+        if (npId) target.npPaymentId = npId;
+        target.lastNpCheck = 0;
+        await syncNowPaymentsPayment(target);
+      }
+      return sendJson(res, 200, { ok: true });
     }
 
     // Webhook oficial do Mercado Pago (confirma pagamento instantaneamente)
@@ -845,6 +963,8 @@ async function handler(req, res) {
           providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
           mercadoPago: mpEnabled(),
           mpPublicKey: ENV.MP_PUBLIC_KEY,
+          nowPayments: npEnabled(),
+          nowPaymentsIpnConfigured: !!ENV.NOWPAYMENTS_IPN_SECRET,
           demoMode: ENV.DEMO_MODE
         });
       }
@@ -874,8 +994,9 @@ async function handler(req, res) {
         str('walletBtc', 120);
         str('walletSol', 120);
 
-        // Mercado Pago (salvo em memória e persistido no .env local quando possível)
+        // Mercado Pago & NOWPayments (salvos em memória e persistidos no .env local quando possível)
         const mp = body.mercadoPago || {};
+        const np = body.nowPayments || {};
         let envUpdated = false;
         if (typeof mp.publicKey === 'string' && mp.publicKey.trim()) {
           ENV.MP_PUBLIC_KEY = clip(mp.publicKey, 160);
@@ -883,6 +1004,14 @@ async function handler(req, res) {
         }
         if (typeof mp.accessToken === 'string' && mp.accessToken.trim()) {
           ENV.MP_ACCESS_TOKEN = clip(mp.accessToken, 200);
+          envUpdated = true;
+        }
+        if (typeof np.apiKey === 'string' && np.apiKey.trim()) {
+          ENV.NOWPAYMENTS_API_KEY = clip(np.apiKey, 200);
+          envUpdated = true;
+        }
+        if (typeof np.ipnSecret === 'string' && np.ipnSecret.trim()) {
+          ENV.NOWPAYMENTS_IPN_SECRET = clip(np.ipnSecret, 200);
           envUpdated = true;
         }
         if (envUpdated && !process.env.VERCEL) {
@@ -896,6 +1025,8 @@ async function handler(req, res) {
             };
             if (ENV.MP_PUBLIC_KEY) upsert('MP_PUBLIC_KEY', ENV.MP_PUBLIC_KEY);
             if (ENV.MP_ACCESS_TOKEN) upsert('MP_ACCESS_TOKEN', ENV.MP_ACCESS_TOKEN);
+            if (ENV.NOWPAYMENTS_API_KEY) upsert('NOWPAYMENTS_API_KEY', ENV.NOWPAYMENTS_API_KEY);
+            if (ENV.NOWPAYMENTS_IPN_SECRET) upsert('NOWPAYMENTS_IPN_SECRET', ENV.NOWPAYMENTS_IPN_SECRET);
             fs.writeFileSync(envPath, lines.filter(Boolean).join('\n') + '\n', 'utf8');
           } catch {}
         }
@@ -990,6 +1121,7 @@ if (require.main === module) {
     console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
     console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado (BR Code manual)'}`);
+    console.log(`  NOWPayments:   ${npEnabled() ? 'ativo (Crypto automático)' : 'não configurado (carteiras manuais)'}`);
     console.log(`  Modo de teste: ${ENV.DEMO_MODE ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
 }

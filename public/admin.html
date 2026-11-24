@@ -186,17 +186,29 @@
 
         <!-- 4. PIX & Crypto -->
         <div class="card">
-          <h2>PIX (Mercado Pago) & Carteiras Crypto</h2>
-          <p class="card-sub">Configure seu Mercado Pago para gerar QR Code PIX e confirmar pagamentos automaticamente.</p>
+          <h2>PIX (Mercado Pago) & Crypto (NOWPayments)</h2>
+          <p class="card-sub">Configure Mercado Pago (PIX) e NOWPayments (Crypto) para confirmação 100% automática.</p>
 
-          <div class="field">
-            <label class="field-label" for="cfg-mp-public">Mercado Pago — Public Key</label>
-            <input type="text" id="cfg-mp-public" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="off" />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="cfg-mp-public">Mercado Pago — Public Key</label>
+              <input type="text" id="cfg-mp-public" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="cfg-mp-token">Mercado Pago — Access Token</label>
+              <input type="password" id="cfg-mp-token" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="new-password" />
+            </div>
           </div>
 
-          <div class="field">
-            <label class="field-label" for="cfg-mp-token">Mercado Pago — Access Token (secreto)</label>
-            <input type="password" id="cfg-mp-token" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="new-password" />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="cfg-np-key">NOWPayments — API Key</label>
+              <input type="password" id="cfg-np-key" class="input input-mono" placeholder="API Key NOWPayments" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="cfg-np-ipn">NOWPayments — IPN Secret (opcional)</label>
+              <input type="password" id="cfg-np-ipn" class="input input-mono" placeholder="IPN Secret Key" autocomplete="new-password" />
+            </div>
           </div>
 
           <div class="field">
