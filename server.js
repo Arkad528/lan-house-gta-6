@@ -109,6 +109,8 @@ const packagesConfig = {
   bumpPriceBRL: 9.9,
   bumpMinutes: 30,
   cryptoDiscountRate: 0.15,
+  mpFeeRate: 0.01,   // 1% taxa Mercado Pago embutida no preço PIX
+  npFeeRate: 0.005,  // 0,5% taxa NOWPayments embutida no preço Crypto
   usdtRateBRL: 5.0,
   packages: {
     trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 3.8 },
@@ -117,6 +119,10 @@ const packagesConfig = {
     pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (4h25)', minutes: 240, bonusMinutes: 25, priceBRL: 86.9 }
   }
 };
+
+function grossUp(amount, feeRate) {
+  return Math.round((amount / (1 - feeRate)) * 100) / 100;
+}
 
 const orders = new Map(); // orderId -> order
 const viewers = new Map(); // clientId -> lastSeen
@@ -609,12 +615,24 @@ setInterval(() => {
 function calculateOrder(packageId, includeBump, paymentMethod) {
   const pkg = packagesConfig.packages[packageId];
   if (!pkg) throw new Error('Selecione um pacote válido.');
-  const bumpPrice = includeBump ? packagesConfig.bumpPriceBRL : 0;
+  const bumpBase = includeBump ? packagesConfig.bumpPriceBRL : 0;
   const bumpMinutes = includeBump ? packagesConfig.bumpMinutes : 0;
-  const subtotal = Math.round((pkg.priceBRL + bumpPrice) * 100) / 100;
+  const baseSubtotal = Math.round((pkg.priceBRL + bumpBase) * 100) / 100;
   const isCrypto = ['usdt', 'btc', 'sol'].includes(paymentMethod);
-  const discount = isCrypto ? Math.round(subtotal * packagesConfig.cryptoDiscountRate * 100) / 100 : 0;
-  const finalPriceBRL = Math.round((subtotal - discount) * 100) / 100;
+
+  const pixSubtotal = grossUp(baseSubtotal, packagesConfig.mpFeeRate);
+  let finalPriceBRL;
+  let discount;
+
+  if (isCrypto) {
+    const cryptoNet = baseSubtotal * (1 - packagesConfig.cryptoDiscountRate);
+    finalPriceBRL = grossUp(cryptoNet, packagesConfig.npFeeRate);
+    discount = Math.round((pixSubtotal - finalPriceBRL) * 100) / 100;
+  } else {
+    finalPriceBRL = pixSubtotal;
+    discount = 0;
+  }
+
   return {
     packageId: pkg.id,
     packageName: pkg.name,
@@ -622,7 +640,7 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
     bonusMinutes: pkg.bonusMinutes,
     bumpMinutes,
     totalMinutes: pkg.minutes + pkg.bonusMinutes + bumpMinutes,
-    subtotalBRL: subtotal,
+    subtotalBRL: pixSubtotal,
     discountBRL: discount,
     finalPriceBRL,
     finalUSDT: (finalPriceBRL / packagesConfig.usdtRateBRL).toFixed(2),
@@ -894,6 +912,8 @@ async function handler(req, res) {
         packages: packagesConfig.packages,
         bumpPriceBRL: packagesConfig.bumpPriceBRL,
         cryptoDiscountRate: packagesConfig.cryptoDiscountRate,
+        mpFeeRate: packagesConfig.mpFeeRate,
+        npFeeRate: packagesConfig.npFeeRate,
         usdtRateBRL: packagesConfig.usdtRateBRL,
         ps5Public: {
           consoleStatus: ps5Config.emergencyOffline ? 'maintenance' : ps5Config.consoleStatus,

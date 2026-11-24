@@ -40,6 +40,8 @@
     coin: 'usdt',
     bumpPrice: 9.9,
     cryptoRate: 0.15,
+    mpFeeRate: 0.01,
+    npFeeRate: 0.005,
     usdtRate: 5,
     pub: null,
     order: null,
@@ -125,6 +127,8 @@
     }
     if (typeof data.bumpPriceBRL === 'number') state.bumpPrice = data.bumpPriceBRL;
     if (typeof data.cryptoDiscountRate === 'number') state.cryptoRate = data.cryptoDiscountRate;
+    if (typeof data.mpFeeRate === 'number') state.mpFeeRate = data.mpFeeRate;
+    if (typeof data.npFeeRate === 'number') state.npFeeRate = data.npFeeRate;
     if (typeof data.usdtRateBRL === 'number') state.usdtRate = data.usdtRateBRL;
     state.pub = data.ps5Public || null;
     renderStage();
@@ -256,10 +260,15 @@
     return state.method === 'crypto';
   }
 
+  function grossUp(amount, feeRate) {
+    return Math.round((amount / (1 - feeRate)) * 100) / 100;
+  }
+
   function renderPlans() {
     $$('[data-price]').forEach((node) => {
       const p = PKG[node.dataset.price].price;
-      node.textContent = money(isCrypto() ? p * (1 - state.cryptoRate) : p);
+      const shown = isCrypto() ? grossUp(p * (1 - state.cryptoRate), state.npFeeRate) : grossUp(p, state.mpFeeRate);
+      node.textContent = money(shown);
     });
     $('toggle-pix').classList.toggle('active', !isCrypto());
     $('toggle-crypto').classList.toggle('active', isCrypto());
@@ -274,13 +283,26 @@
 
   function calc() {
     const pkg = PKG[state.pkg];
-    const bumpPrice = state.bump ? state.bumpPrice : 0;
-    const subtotal = Math.round((pkg.price + bumpPrice) * 100) / 100;
-    const discount = isCrypto() ? Math.round(subtotal * state.cryptoRate * 100) / 100 : 0;
-    const total = Math.round((subtotal - discount) * 100) / 100;
+    const bumpBase = state.bump ? state.bumpPrice : 0;
+    const baseSubtotal = Math.round((pkg.price + bumpBase) * 100) / 100;
+    const pkgPix = grossUp(pkg.price, state.mpFeeRate);
+    const bumpPix = grossUp(state.bumpPrice, state.mpFeeRate);
+    const pixSubtotal = grossUp(baseSubtotal, state.mpFeeRate);
+
+    let total;
+    let discount;
+    if (isCrypto()) {
+      total = grossUp(baseSubtotal * (1 - state.cryptoRate), state.npFeeRate);
+      discount = Math.round((pixSubtotal - total) * 100) / 100;
+    } else {
+      total = pixSubtotal;
+      discount = 0;
+    }
+
     return {
       pkg,
-      bumpPrice,
+      pkgPix,
+      bumpPix,
       discount,
       total,
       minutes: pkg.minutes + pkg.bonus + (state.bump ? 30 : 0)
@@ -296,13 +318,13 @@
     $('coins').classList.toggle('hidden', !isCrypto());
     $$('[data-coin]').forEach((b) => b.classList.toggle('is-active', b.dataset.coin === state.coin));
 
-    $('bump-price').textContent = '+ ' + money(state.bumpPrice);
+    $('bump-price').textContent = '+ ' + money(c.bumpPix);
     $('r-name').textContent = c.pkg.name;
-    $('r-price').textContent = money(c.pkg.price);
+    $('r-price').textContent = money(c.pkgPix);
     $('r-bonus-row').classList.toggle('hidden', !c.pkg.bonus);
     $('r-bonus').textContent = `Bônus +${c.pkg.bonus} min`;
     $('r-bump-row').classList.toggle('hidden', !state.bump);
-    $('r-bump').textContent = '+ ' + money(state.bumpPrice);
+    $('r-bump').textContent = '+ ' + money(c.bumpPix);
     $('r-crypto-row').classList.toggle('hidden', !isCrypto());
     $('r-crypto').textContent = '- ' + money(c.discount);
     $('r-time').textContent = duration(c.minutes);
