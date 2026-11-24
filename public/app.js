@@ -108,6 +108,7 @@
     if (!ok) return;
     state.user = data.user;
     state.isAdmin = !!data.isAdmin;
+    if (data.csrfToken) state.csrf = data.csrfToken;
     state.providers = data.providers || state.providers;
     state.demoMode = !!data.demoMode;
     renderAuth();

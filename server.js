@@ -175,8 +175,11 @@ function getBaseUrl(req) {
 }
 
 function isSameOrigin(req) {
+  const sfs = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (sfs === 'cross-site') return false;
   const origin = req.headers.origin;
   if (!origin) return true;
+  if (origin === 'null') return false;
   return origin === getBaseUrl(req);
 }
 
@@ -249,6 +252,7 @@ function makeLimiter(windowMs, max) {
 const globalLimiter = makeLimiter(60_000, 150);
 const checkoutLimiter = makeLimiter(60_000, 10);
 const adminActionLimiter = makeLimiter(60_000, 60);
+const webhookLimiter = makeLimiter(60_000, 30);
 
 function getSessionUser(req) {
   const data = unsign(parseCookies(req).pg6_session, 'sess');
@@ -262,8 +266,15 @@ function isAdminUser(user) {
   return ENV.ADMIN_DISCORD_IDS.has(discordId);
 }
 
-function issueCsrf() {
-  return sign({ t: 'csrf', n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 2 * 60 * 60 * 1000 });
+function issueCsrf(uid) {
+  return sign({ t: 'csrf', u: uid || 'anon', n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 2 * 60 * 60 * 1000 });
+}
+
+function verifyCsrf(token, uid, strictUid) {
+  const data = unsign(token, 'csrf');
+  if (!data) return false;
+  if (strictUid) return !!uid && data.u === uid;
+  return data.u === (uid || 'anon') || data.u === 'anon';
 }
 
 // ---------------------------------------------------------------------------
@@ -793,10 +804,12 @@ function serveStatic(res, pathname) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end('404 - Página não encontrada');
     }
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
       'Cache-Control': rel === '/admin.html' ? 'no-store' : 'no-cache'
-    });
+    };
+    if (rel === '/admin.html') headers['X-Robots-Tag'] = 'noindex, nofollow';
+    res.writeHead(200, headers);
     res.end(content);
   });
 }
@@ -842,6 +855,7 @@ async function handler(req, res) {
       return sendJson(res, 200, {
         user: user ? { name: user.name, handle: user.handle, avatar: user.avatar, provider: user.provider } : null,
         isAdmin: isAdminUser(user),
+        csrfToken: issueCsrf(user?.uid),
         providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
         demoMode: isDemoMode()
       });
@@ -853,7 +867,7 @@ async function handler(req, res) {
       if (cid && /^[a-z0-9]{8,32}$/.test(cid) && viewers.size < 5000) viewers.set(cid, Date.now());
       const ap = ps5Config.activePlayer;
       return sendJson(res, 200, {
-        csrfToken: issueCsrf(),
+        csrfToken: issueCsrf(user?.uid),
         packages: packagesConfig.packages,
         bumpPriceBRL: packagesConfig.bumpPriceBRL,
         cryptoDiscountRate: packagesConfig.cryptoDiscountRate,
@@ -873,8 +887,8 @@ async function handler(req, res) {
     if (req.method === 'POST' && p === '/api/checkout') {
       if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (ps5Config.emergencyOffline) return sendJson(res, 503, { error: 'Sistema desligado em modo de emergência. Tente mais tarde.' });
-      if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
       if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
+      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, false)) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
       if (!checkoutLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
 
       const pendingCount = [...orders.values()].filter((o) => o.uid === user.uid && o.status === 'pending').length;
@@ -933,6 +947,7 @@ async function handler(req, res) {
 
     // Webhook IPN oficial da NOWPayments (confirma Crypto automaticamente)
     if (req.method === 'POST' && p === '/api/webhooks/nowpayments') {
+      if (!webhookLimiter(ip)) return sendJson(res, 429, { error: 'rate_limit' });
       if (!npEnabled()) return sendJson(res, 200, { ok: true });
       const body = await readJson(req).catch(() => ({}));
       if (!verifyNowPaymentsIpn(body, req.headers['x-nowpayments-sig'])) {
@@ -943,7 +958,7 @@ async function handler(req, res) {
       const target =
         orders.get(String(body.order_id || '')) ||
         (npId ? [...orders.values()].find((o) => o.npPaymentId === npId) : null);
-      if (target) {
+      if (target && target.status === 'pending') {
         if (npId) target.npPaymentId = npId;
         target.lastNpCheck = 0;
         await syncNowPaymentsPayment(target);
@@ -953,7 +968,10 @@ async function handler(req, res) {
 
     // Webhook oficial do Mercado Pago (confirma pagamento instantaneamente)
     if (req.method === 'POST' && p === '/api/webhooks/mercadopago') {
+      if (!webhookLimiter(ip)) return sendJson(res, 429, { error: 'rate_limit' });
       if (!mpEnabled()) return sendJson(res, 200, { ok: true });
+      const hasPending = [...orders.values()].some((o) => o.status === 'pending' && !o.isCrypto);
+      if (!hasPending) return sendJson(res, 200, { ok: true });
       const body = await readJson(req).catch(() => ({}));
       const rawMpId = String(body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id') || '').trim();
       const mpId = /^\d{4,25}$/.test(rawMpId) ? rawMpId : '';
@@ -991,8 +1009,8 @@ async function handler(req, res) {
     if (req.method === 'POST' && p === '/api/demo/confirm') {
       if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (!isDemoMode()) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
-      if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf' });
       if (!user) return sendJson(res, 401, { error: 'login' });
+      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, false)) return sendJson(res, 403, { error: 'csrf' });
       const body = await readJson(req);
       const o = orders.get(String(body.orderId || ''));
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
@@ -1008,7 +1026,7 @@ async function handler(req, res) {
       if (req.method === 'GET' && p === '/api/admin/state') {
         return sendJson(res, 200, {
           ok: true,
-          csrfToken: issueCsrf(),
+          csrfToken: issueCsrf(user.uid),
           adminUser: { name: user.name, handle: user.handle, avatar: user.avatar },
           ps5Config,
           packagesConfig,
@@ -1026,7 +1044,7 @@ async function handler(req, res) {
       if (req.method === 'POST') {
         if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
         if (!adminActionLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitas ações seguidas. Aguarde 1 minuto.' });
-        if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Recarregue a página.' });
+        if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, true)) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Recarregue a página.' });
       }
 
       if (req.method === 'POST' && p === '/api/admin/save') {
@@ -1093,7 +1111,7 @@ async function handler(req, res) {
             if (ENV.MP_ACCESS_TOKEN) upsert('MP_ACCESS_TOKEN', ENV.MP_ACCESS_TOKEN);
             if (ENV.NOWPAYMENTS_API_KEY) upsert('NOWPAYMENTS_API_KEY', ENV.NOWPAYMENTS_API_KEY);
             if (ENV.NOWPAYMENTS_IPN_SECRET) upsert('NOWPAYMENTS_IPN_SECRET', ENV.NOWPAYMENTS_IPN_SECRET);
-            fs.writeFileSync(envPath, lines.filter(Boolean).join('\n') + '\n', 'utf8');
+            fs.writeFileSync(envPath, lines.filter(Boolean).join('\n') + '\n', { encoding: 'utf8', mode: 0o600 });
           } catch {}
         }
 
