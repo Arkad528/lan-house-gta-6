@@ -69,6 +69,7 @@
     order: null,
     pollTimer: null,
     countdownTimer: null,
+    countdownDeadline: 0,
     soundAlertEnabled: false,
     soundPromptDismissed: false,
     audioCtx: null,
@@ -140,14 +141,17 @@
   function stopCountdown() {
     clearInterval(state.countdownTimer);
     state.countdownTimer = null;
+    state.countdownDeadline = 0;
   }
 
   function startCountdown(expiresAt) {
-    stopCountdown();
     const box = $('o-countdown');
     const timeEl = $('o-countdown-time');
     if (!box || !timeEl) return;
     const deadline = Number(expiresAt) || Date.now() + 30 * 60_000;
+    if (state.countdownTimer && Math.abs(state.countdownDeadline - deadline) < 2000) return;
+    stopCountdown();
+    state.countdownDeadline = deadline;
 
     const tick = () => {
       const leftSec = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
@@ -252,7 +256,11 @@
       $('btn-sound-enable').textContent = '🔔 Testar som';
       $('btn-sound-dismiss').textContent = 'Desativar';
     } else {
-      $('o-sound-prompt-text').innerHTML = 'Quer receber um <strong>aviso sonoro</strong> assim que o PS5 ficar livre para você?';
+      $('o-sound-prompt-text').replaceChildren(
+        document.createTextNode('Quer receber um '),
+        el('strong', '', 'aviso sonoro'),
+        document.createTextNode(' assim que o PS5 ficar livre para você?')
+      );
       $('btn-sound-enable').textContent = '🔔 Sim, me avise com som';
       $('btn-sound-dismiss').textContent = 'Agora não';
     }
@@ -630,7 +638,7 @@
     if (pending) {
       if (PKG[pending.pkg]) state.pkg = pending.pkg;
       state.bump = !!pending.bump;
-      state.method = pending.method === 'crypto' ? 'crypto' : 'pix';
+      state.method = pending.method === 'crypto' && isCryptoAllowed() ? 'crypto' : 'pix';
       if (state.cryptoOptions.some((c) => c.id === pending.coin)) state.coin = pending.coin;
       $('chk-bump').checked = state.bump;
       renderAll();
@@ -900,7 +908,7 @@
 
     $$('input[name="pay"]').forEach((r) =>
       r.addEventListener('change', () => {
-        state.method = r.value === 'crypto' ? 'crypto' : 'pix';
+        state.method = r.value === 'crypto' && isCryptoAllowed() ? 'crypto' : 'pix';
         renderAll();
       })
     );

@@ -197,10 +197,17 @@ function getBaseUrl(req) {
 function isSameOrigin(req) {
   const sfs = String(req.headers['sec-fetch-site'] || '').toLowerCase();
   if (sfs === 'cross-site') return false;
+  const base = getBaseUrl(req);
   const origin = req.headers.origin;
-  if (!origin) return true;
-  if (origin === 'null') return false;
-  return origin === getBaseUrl(req);
+  if (origin) {
+    if (origin === 'null') return false;
+    return origin === base;
+  }
+  const referer = req.headers.referer;
+  if (referer) {
+    return referer === base || referer.startsWith(base + '/');
+  }
+  return true;
 }
 
 function setCookie(req, res, name, value, maxAgeSec) {
@@ -231,22 +238,32 @@ function redirect(res, location) {
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
+    let totalBytes = 0;
+    let aborted = false;
     req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 32 * 1024) {
+      if (aborted) return;
+      totalBytes += chunk.length;
+      if (totalBytes > 32 * 1024) {
+        aborted = true;
         reject(new Error('Payload muito grande'));
         req.destroy();
+        return;
       }
+      chunks.push(chunk);
     });
     req.on('end', () => {
+      if (aborted) return;
       try {
-        resolve(body ? JSON.parse(body) : {});
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
       } catch {
         reject(new Error('JSON inválido'));
       }
     });
-    req.on('error', reject);
+    req.on('error', (err) => {
+      if (!aborted) reject(err);
+    });
   });
 }
 
@@ -374,7 +391,7 @@ async function syncMercadoPagoPayment(order) {
     if (!r.ok) return;
     const data = await r.json();
     const amountOk = Number(data.transaction_amount) >= order.finalPriceBRL - 0.01;
-    const refOk = !data.external_reference || String(data.external_reference) === order.orderId;
+    const refOk = Boolean(data.external_reference) && String(data.external_reference) === order.orderId;
     if (data.status === 'approved' && amountOk && refOk) {
       const approvedAt = Date.parse(data.date_approved || data.date_last_updated || '');
       const sessionMs = order.totalMinutes * 60_000;
@@ -524,7 +541,7 @@ async function syncNowPaymentsPayment(order) {
     });
     if (!r.ok) return;
     const data = await r.json();
-    const refOk = !data.order_id || String(data.order_id) === order.orderId;
+    const refOk = Boolean(data.order_id) && String(data.order_id) === order.orderId;
     const amountOk = Number(data.price_amount || 0) >= order.finalPriceBRL - 0.05;
     if ((data.payment_status === 'finished' || data.payment_status === 'confirmed') && refOk && amountOk) {
       const paidAt = Date.parse(data.updated_at || data.created_at || '');
@@ -598,11 +615,16 @@ function finishActive() {
 }
 
 function advanceQueue() {
-  if (ps5Config.activePlayer || ps5Config.consoleStatus === 'maintenance') return;
-  const next = ps5Config.queue.shift();
-  const order = next && orders.get(next.orderId);
-  if (order) startSession(order);
-  else if (ps5Config.consoleStatus === 'busy') ps5Config.consoleStatus = 'online';
+  if (ps5Config.activePlayer || ps5Config.consoleStatus === 'maintenance' || ps5Config.emergencyOffline) return;
+  while (ps5Config.queue.length > 0) {
+    const next = ps5Config.queue.shift();
+    const order = next && orders.get(next.orderId);
+    if (order && order.status === 'queued') {
+      startSession(order);
+      return;
+    }
+  }
+  if (ps5Config.consoleStatus === 'busy') ps5Config.consoleStatus = 'online';
 }
 
 function queueSummary(publicView) {
@@ -710,6 +732,7 @@ function issueOrderToken(o) {
   return sign({
     t: 'ord',
     id: o.orderId,
+    ca: Date.parse(o.createdAt) || Date.now(),
     uid: o.uid,
     un: o.userName,
     uh: o.userHandle,
@@ -909,33 +932,53 @@ const MIME = {
   '.ico': 'image/x-icon'
 };
 
-function serveStatic(res, pathname) {
-  let rel = pathname === '/' ? '/index.html' : pathname;
-  if (rel === '/admin' || rel === '/admin/') rel = '/admin.html';
+function serveStatic(req, res, pathname, user) {
   let decoded;
   try {
-    decoded = decodeURIComponent(rel);
+    decoded = decodeURIComponent(pathname);
   } catch {
     res.writeHead(400);
     return res.end('Bad request');
   }
-  const abs = path.normalize(path.join(PUBLIC_DIR, decoded));
+  // Normaliza barras duplicadas e segmentos '.' / '..' antes de qualquer checagem
+  const normalizedUrlPath = path.posix.normalize(decoded.replace(/\\/g, '/'));
+  const isAdminShortcut = normalizedUrlPath.toLowerCase() === '/admin' || normalizedUrlPath.toLowerCase() === '/admin/';
+  let rel = normalizedUrlPath === '/' ? '/index.html' : normalizedUrlPath;
+  if (isAdminShortcut) rel = '/admin.html';
+
+  const abs = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!abs.startsWith(PUBLIC_DIR + path.sep)) {
     res.writeHead(403);
     return res.end('Forbidden');
   }
+
+  // Proteção server-side infalível contra bypass por URL-encoding, case-sensitivity ou barras extras
+  const relFromPublic = path.relative(PUBLIC_DIR, abs).replace(/\\/g, '/').toLowerCase();
+  const isAdminAsset = relFromPublic === 'admin.html' || relFromPublic === 'admin.js';
+  if (isAdminAsset) {
+    if (!user) {
+      if (isAdminShortcut && req.method === 'GET') return redirect(res, '/auth/discord?next=/admin');
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(req.method === 'HEAD' ? '' : '404 - Página não encontrada');
+    }
+    if (!isAdminUser(user)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(req.method === 'HEAD' ? '' : '404 - Página não encontrada');
+    }
+  }
+
   fs.readFile(abs, (err, content) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('404 - Página não encontrada');
+      return res.end(req.method === 'HEAD' ? '' : '404 - Página não encontrada');
     }
     const headers = {
       'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': rel === '/admin.html' ? 'no-store' : 'no-cache'
+      'Cache-Control': isAdminAsset ? 'no-store' : 'no-cache'
     };
-    if (rel === '/admin.html') headers['X-Robots-Tag'] = 'noindex, nofollow';
+    if (isAdminAsset) headers['X-Robots-Tag'] = 'noindex, nofollow';
     res.writeHead(200, headers);
-    res.end(content);
+    res.end(req.method === 'HEAD' ? '' : content);
   });
 }
 
@@ -957,7 +1000,8 @@ async function handler(req, res) {
   const ip = getIp(req);
   if (!globalLimiter(ip)) return sendJson(res, 429, { error: 'Muitas requisições. Aguarde 1 minuto.' });
 
-  const url = new URL(req.url, 'http://local');
+  const rawUrl = String(req.url || '/');
+  const url = new URL(rawUrl.startsWith('//') ? '/' + rawUrl.replace(/^\/+/, '') : rawUrl, 'http://local');
   const p = url.pathname;
   const user = getSessionUser(req);
 
@@ -1017,7 +1061,7 @@ async function handler(req, res) {
       if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (ps5Config.emergencyOffline) return sendJson(res, 503, { error: 'Sistema desligado em modo de emergência. Tente mais tarde.' });
       if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
-      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, false)) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
+      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, true)) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
       if (!checkoutLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
 
       const pendingCount = [...orders.values()].filter((o) => o.uid === user.uid && o.status === 'pending').length;
@@ -1084,9 +1128,10 @@ async function handler(req, res) {
       if (!o) {
         const tok = unsign(url.searchParams.get('ot') || '', 'ord');
         if (tok && tok.id === id && tok.uid === user.uid) {
+          const createdMs = Number.isFinite(tok.ca) ? tok.ca : Date.now();
           o = {
             orderId: tok.id,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(createdMs).toISOString(),
             uid: tok.uid,
             userName: tok.un || user.name,
             userHandle: tok.uh || user.handle,
@@ -1113,6 +1158,9 @@ async function handler(req, res) {
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
       if (o.isCrypto) await syncNowPaymentsPayment(o);
       else await syncMercadoPagoPayment(o);
+      if (o.status === 'pending' && Date.now() - Date.parse(o.createdAt) > 30 * 60_000) {
+        o.status = 'expired';
+      }
       return sendJson(res, 200, { ok: true, order: publicOrder(o) });
     }
 
@@ -1130,7 +1178,7 @@ async function handler(req, res) {
         orders.get(String(body.order_id || '')) ||
         (npId ? [...orders.values()].find((o) => o.npPaymentId === npId) : null);
       if (target && target.status === 'pending') {
-        if (npId) target.npPaymentId = npId;
+        if (!target.npPaymentId && npId) target.npPaymentId = npId;
         target.lastNpCheck = 0;
         await syncNowPaymentsPayment(target);
       }
@@ -1158,11 +1206,10 @@ async function handler(req, res) {
             if (r.ok) {
               const mpData = await r.json();
               target = orders.get(String(mpData.external_reference || ''));
-              if (target) {
-                target.mpPaymentId = mpId;
-                const amountOk = Number(mpData.transaction_amount) >= target.finalPriceBRL - 0.01;
-                if (mpData.status === 'approved' && amountOk) enqueueOrActivate(target);
-                else if (mpData.status === 'cancelled' || mpData.status === 'rejected') target.status = 'cancelled';
+              if (target && target.status === 'pending') {
+                if (!target.mpPaymentId) target.mpPaymentId = mpId;
+                target.lastMpCheck = 0;
+                await syncMercadoPagoPayment(target);
               }
             }
           } catch (err) {
@@ -1181,7 +1228,7 @@ async function handler(req, res) {
       if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (!isDemoMode()) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
       if (!user) return sendJson(res, 401, { error: 'login' });
-      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, false)) return sendJson(res, 403, { error: 'csrf' });
+      if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, true)) return sendJson(res, 403, { error: 'csrf' });
       const body = await readJson(req);
       const o = orders.get(String(body.orderId || ''));
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
@@ -1202,7 +1249,10 @@ async function handler(req, res) {
           ps5Config,
           packagesConfig,
           queueSummary: queueSummary(false),
-          orders: [...orders.values()].reverse().slice(0, 60),
+          orders: [...orders.values()]
+            .reverse()
+            .slice(0, 60)
+            .map(({ pixQrBase64, ...rest }) => rest),
           providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
           mercadoPago: mpEnabled(),
           mpMode: mpMode(),
@@ -1289,9 +1339,11 @@ async function handler(req, res) {
         const bump = Number(prices.bumpPriceBRL);
         if (Number.isFinite(bump) && bump >= 0 && bump < 10000) packagesConfig.bumpPriceBRL = Math.round(bump * 100) / 100;
 
-        if (ps5Config.consoleStatus === 'online' && ps5Config.activePlayer) ps5Config.consoleStatus = 'busy';
-        if (ps5Config.consoleStatus === 'busy' && !ps5Config.activePlayer) ps5Config.consoleStatus = 'online';
-        advanceQueue();
+        if (!ps5Config.emergencyOffline) {
+          if (ps5Config.consoleStatus === 'online' && ps5Config.activePlayer) ps5Config.consoleStatus = 'busy';
+          if (ps5Config.consoleStatus === 'busy' && !ps5Config.activePlayer) ps5Config.consoleStatus = 'online';
+          advanceQueue();
+        }
         return sendJson(res, 200, { ok: true });
       }
 
@@ -1357,20 +1409,7 @@ async function handler(req, res) {
       return sendJson(res, 404, { error: 'Rota não encontrada.' });
     }
 
-    // Proteção server-side: /admin, /admin.html e /admin.js nunca são servidos para quem não é admin
-    if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/admin' || p === '/admin/' || p === '/admin.html' || p === '/admin.js')) {
-      if (!user) {
-        if (p === '/admin' || p === '/admin/') return redirect(res, '/auth/discord?next=/admin');
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('404 - Página não encontrada');
-      }
-      if (!isAdminUser(user)) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('404 - Página não encontrada');
-      }
-    }
-
-    if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p);
+    if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, p, user);
     return sendJson(res, 405, { error: 'Método não permitido.' });
   } catch (err) {
     console.error('[playgta6] Erro:', err.message);
