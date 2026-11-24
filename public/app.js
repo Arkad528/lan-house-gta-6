@@ -45,7 +45,11 @@
     usdtRate: 5,
     pub: null,
     order: null,
-    pollTimer: null
+    pollTimer: null,
+    soundAlertEnabled: false,
+    soundPromptDismissed: false,
+    audioCtx: null,
+    titleAlertTimer: null
   };
 
   const clientId = (() => {
@@ -101,7 +105,99 @@
   function closeModal(id) {
     $(id).classList.add('hidden');
     if (!document.querySelector('.modal:not(.hidden)')) document.body.classList.remove('modal-open');
-    if (id === 'order-modal') stopPolling();
+    // Mantém o polling rodando em segundo plano se o jogador ativou o aviso sonoro na fila!
+    if (id === 'order-modal' && !(state.order && state.order.status === 'queued' && state.soundAlertEnabled)) {
+      stopPolling();
+    }
+  }
+
+  // ---------------------------------------------------------------- som de alerta (Web Audio API)
+  function unlockAudio() {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!state.audioCtx) state.audioCtx = new AudioCtx();
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume().catch(() => {});
+    return state.audioCtx;
+  }
+
+  function playChime(type) {
+    const ctx = unlockAudio();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // 'confirm' = 1 toque suave de teste | 'ready' = 3 notas claras chamando para jogar
+    const notes =
+      type === 'confirm'
+        ? [{ f: 660, t: 0, d: 0.14 }]
+        : [
+            { f: 523.25, t: 0, d: 0.18 },
+            { f: 659.25, t: 0.19, d: 0.18 },
+            { f: 783.99, t: 0.38, d: 0.22 },
+            { f: 1046.5, t: 0.62, d: 0.42 }
+          ];
+
+    notes.forEach((n) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(n.f, now + n.t);
+      gain.gain.setValueAtTime(0.001, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(type === 'confirm' ? 0.14 : 0.28, now + n.t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + n.t + n.d);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d + 0.03);
+    });
+  }
+
+  function notifyTurnReady() {
+    if (state.soundAlertEnabled) {
+      playChime('ready');
+      setTimeout(() => playChime('ready'), 1400);
+    }
+    toast('É a sua vez! O controle do PS5 está liberado!', 'success');
+    openModal('order-modal');
+
+    // Pisca o título da aba caso o jogador esteja em outra aba
+    const origTitle = 'playgta6 — Jogue GTA VI no PS5 por hora';
+    clearInterval(state.titleAlertTimer);
+    let toggle = false;
+    state.titleAlertTimer = setInterval(() => {
+      if (!document.hidden) {
+        document.title = origTitle;
+        clearInterval(state.titleAlertTimer);
+        return;
+      }
+      toggle = !toggle;
+      document.title = toggle ? '🔔 SUA VEZ NO PS5! — playgta6' : origTitle;
+    }, 900);
+
+    // Notificação nativa do navegador se o usuário permitiu
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('playgta6 — É a sua vez no PS5!', {
+          body: 'O console foi liberado. Volte para a aba para pegar seu PIN e jogar GTA VI.'
+        });
+      } catch {}
+    }
+  }
+
+  function renderSoundPrompt(status) {
+    const box = $('o-sound-prompt');
+    if (status !== 'queued' || state.soundPromptDismissed) {
+      box.classList.add('hidden');
+      return;
+    }
+    box.classList.remove('hidden');
+    if (state.soundAlertEnabled) {
+      $('o-sound-prompt-text').textContent = 'Aviso sonoro ativado! Pode assistir à live tranquilo — vamos tocar um alerta quando for a sua vez.';
+      $('btn-sound-enable').textContent = '🔔 Testar som';
+      $('btn-sound-dismiss').textContent = 'Desativar';
+    } else {
+      $('o-sound-prompt-text').innerHTML = 'Quer receber um <strong>aviso sonoro</strong> assim que o PS5 ficar livre para você?';
+      $('btn-sound-enable').textContent = '🔔 Sim, me avise com som';
+      $('btn-sound-dismiss').textContent = 'Agora não';
+    }
   }
 
   // ---------------------------------------------------------------- dados
@@ -451,6 +547,7 @@
 
   function showOrder(order) {
     state.order = order;
+    state.soundPromptDismissed = false;
     $('order-title').textContent = `Pedido #${order.orderId}`;
     $('o-plan').textContent = order.packageName;
     $('o-time').textContent = duration(order.totalMinutes);
@@ -503,6 +600,7 @@
     spinner.classList.add('hidden');
     payBlock.classList.toggle('hidden', o.status !== 'pending');
     demo.classList.toggle('hidden', !(state.demoMode && o.status === 'pending'));
+    renderSoundPrompt(o.status);
 
     switch (o.status) {
       case 'pending':
@@ -559,9 +657,12 @@
     if (state.order.orderToken) qs.set('ot', state.order.orderToken);
     const { ok, data } = await api(`/api/order?${qs.toString()}`).catch(() => ({ ok: false }));
     if (ok && data.order) {
-      const wasActive = state.order.status === 'active';
+      const prevStatus = state.order.status;
       updateOrderStatus(data.order);
-      if (!wasActive && data.order.status === 'active') loadConfig();
+      if (prevStatus !== 'active' && data.order.status === 'active') {
+        loadConfig();
+        if (prevStatus === 'queued' || state.soundAlertEnabled) notifyTurnReady();
+      }
     }
   }
 
@@ -650,6 +751,27 @@
     $('btn-submit-order').addEventListener('click', () => submitOrder(false));
     $('btn-copy').addEventListener('click', copyCode);
     $('btn-demo-pay').addEventListener('click', demoPay);
+
+    $('btn-sound-enable').addEventListener('click', () => {
+      state.soundAlertEnabled = true;
+      playChime('confirm');
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+      renderSoundPrompt(state.order?.status);
+      toast('Aviso sonoro ativado! Vamos tocar um alerta quando for sua vez.', 'success');
+    });
+
+    $('btn-sound-dismiss').addEventListener('click', () => {
+      if (state.soundAlertEnabled) {
+        state.soundAlertEnabled = false;
+        renderSoundPrompt(state.order?.status);
+        toast('Aviso sonoro desativado.');
+      } else {
+        state.soundPromptDismissed = true;
+        renderSoundPrompt(state.order?.status);
+      }
+    });
 
     // Fechar modais: botão, clique fora e tecla Esc
     $$('[data-close-modal]').forEach((b) => b.addEventListener('click', () => closeModal(b.closest('.modal').id)));

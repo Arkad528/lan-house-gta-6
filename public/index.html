@@ -325,6 +325,16 @@
         <div class="spinner" id="o-spinner"></div>
         <h4 id="o-status-title">Aguardando confirmação</h4>
         <p id="o-status-text">Assim que o pagamento for confirmado, seu acesso aparece aqui automaticamente.</p>
+
+        <!-- Prompt de aviso sonoro quando o jogador está na fila -->
+        <div class="sound-prompt hidden" id="o-sound-prompt">
+          <p id="o-sound-prompt-text">Quer receber um <strong>aviso sonoro</strong> assim que o PS5 ficar livre para você?</p>
+          <div class="sound-prompt-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-sound-enable">🔔 Sim, me avise com som</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sound-dismiss">Agora não</button>
+          </div>
+        </div>
+
         <div class="pin hidden" id="o-pin"></div>
         <a class="btn btn-primary hidden" id="o-parsec" href="#" target="_blank" rel="noopener noreferrer">Abrir conexão com o PS5</a>
       </div>
