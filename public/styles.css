@@ -1537,3 +1537,260 @@ h1, h2, h3, h4, .brand-name, .price-main, .slider-time-big {
   color: var(--accent-gold);
   line-height: 1.4;
 }
+
+
+/* =========================================================
+   CENTRALIZAÇÃO HARMÔNICA, FLUIDEZ, ANIMAÇÕES E POPUP CTA
+   ========================================================= */
+
+@keyframes fadeInUpSmooth {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ctaPulseGlow {
+  0%, 100% {
+    box-shadow: 0 8px 28px rgba(255, 42, 133, 0.45), 0 0 0 0 rgba(255, 138, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 12px 36px rgba(255, 42, 133, 0.7), 0 0 0 8px rgba(255, 138, 0, 0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUpSmooth 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal-card {
+  animation: modalPopIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Cabeçalho de Preços Centralizado */
+.pricing-header-centered {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 0 22px;
+  gap: 10px;
+}
+
+.pricing-header-centered h1 {
+  font-size: clamp(1.75rem, 3vw, 2.4rem);
+  line-height: 1.15;
+  text-shadow: 0 2px 24px rgba(255, 42, 133, 0.25);
+}
+
+/* Cards de Preço Centralizados e Mais Fluidos */
+.price-card {
+  text-align: center;
+  padding: 22px 18px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.28s ease,
+              box-shadow 0.28s ease;
+}
+
+.price-card:hover {
+  transform: translateY(-6px) scale(1.015);
+  border-color: rgba(0, 240, 255, 0.65);
+  box-shadow: 0 16px 36px rgba(0, 240, 255, 0.16);
+}
+
+.card-body-centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.price-card h3 {
+  font-size: 1.25rem;
+  margin-bottom: 6px;
+}
+
+.duration-pill {
+  display: inline-block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 11px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+.duration-pill-gold {
+  background: rgba(255, 208, 0, 0.14);
+  border-color: rgba(255, 208, 0, 0.45);
+  color: var(--accent-gold);
+}
+
+.duration-pill-cyan {
+  background: rgba(0, 240, 255, 0.14);
+  border-color: rgba(0, 240, 255, 0.45);
+  color: var(--accent-cyan);
+}
+
+.price-block {
+  width: 100%;
+  text-align: center;
+  padding: 14px 12px;
+  margin-bottom: 14px;
+}
+
+.feature-list {
+  width: 100%;
+  text-align: left;
+  background: rgba(13, 5, 23, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  gap: 7px;
+}
+
+.feature-list li {
+  font-size: 0.81rem;
+  line-height: 1.35;
+}
+
+.btn-select-pkg {
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-featured, .price-card.active-card .btn-select-pkg {
+  animation: ctaPulseGlow 2.4s infinite;
+}
+
+/* Banner Mega CTA Centralizado Abaixo dos Cards */
+.cta-banner-section {
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+
+.cta-banner-inner {
+  background: linear-gradient(135deg, rgba(44, 12, 68, 0.95) 0%, rgba(22, 8, 40, 0.96) 100%);
+  border: 2px solid var(--accent-vice);
+  border-radius: var(--radius-lg);
+  padding: 22px 26px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  box-shadow: 0 18px 45px rgba(255, 42, 133, 0.22);
+}
+
+.cta-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cta-live-indicator {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--accent-cyan);
+}
+
+.cta-banner-info h2 {
+  font-size: clamp(1.2rem, 2.2vw, 1.55rem);
+}
+
+.cta-banner-info p {
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.btn-mega-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(90deg, var(--accent-vice) 0%, var(--accent-amber) 55%, var(--accent-gold) 100%);
+  color: #0d0517;
+  font-family: 'Space Grotesk', sans-serif;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 30px;
+  cursor: pointer;
+  animation: ctaPulseGlow 2.2s infinite;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-mega-cta:hover {
+  transform: translateY(-3px) scale(1.03);
+}
+
+.btn-mega-cta span {
+  font-size: 1.12rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.btn-mega-cta small {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 700;
+  opacity: 0.88;
+}
+
+.btn-take-control {
+  border: none;
+  cursor: pointer;
+  animation: ctaPulseGlow 2.5s infinite;
+  transition: transform 0.2s ease;
+}
+
+.btn-take-control:hover {
+  transform: scale(1.05);
+}
+
+/* Popup de Checkout ("Liberar Controle do PS5") */
+.checkout-modal-card {
+  max-width: 470px;
+  padding: 24px;
+}
+
+.compact-bump {
+  margin-bottom: 12px;
+  padding: 11px 13px;
+}
+
+.compact-bump h4 {
+  font-size: 0.84rem;
+  margin-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .cta-banner-inner {
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+  }
+  .btn-mega-cta {
+    width: 100%;
+  }
+}

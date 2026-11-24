@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- Área Flutuante Apenas para Conectar Conta (Sem Barra Superior) -->
+  <!-- Topo Limpo: Apenas Conectar Conta -->
   <div class="container top-auth-only">
     <div class="auth-area" id="auth-area">
       <button class="btn-auth btn-discord" id="btn-login-discord" type="button">
@@ -40,7 +40,7 @@
 
   <main class="container main-content">
     <!-- TELA AO VIVO DO PS5 + PAINEL DE FILA EM TEMPO REAL -->
-    <section class="live-stage-section" aria-label="Transmissão Ao Vivo do PS5">
+    <section class="live-stage-section fade-in-up" aria-label="Transmissão Ao Vivo do PS5">
       <div class="live-stage-card">
         <div class="live-stage-topbar">
           <div class="live-title-group">
@@ -71,18 +71,18 @@
             </div>
             <div class="overlay-actions">
               <button type="button" class="btn-fullscreen-toggle" id="btn-fullscreen-stream">⛶ Tela Cheia</button>
-              <a href="#checkout-area" class="btn-take-control">🎮 Assumir o Controle do PS5</a>
+              <button type="button" class="btn-take-control" id="btn-hero-play-now">🎮 JOGAR AGORA NO PS5</button>
             </div>
           </div>
         </div>
 
-        <!-- PAINEL DE FILA AO VIVO (Mostra quem está jogando e as pessoas na frente esperando) -->
+        <!-- PAINEL DE FILA AO VIVO -->
         <div class="queue-status-strip" id="queue-status-strip">
           <div class="queue-strip-main">
             <div class="queue-now-box">
-              <span class="q-badge-status" id="q-badge-status">🟢 ENTRADA IMEDIATA</span>
+              <span class="q-badge-status q-badge-free" id="q-badge-status">🟢 FILA ZERO • ENTRADA IMEDIATA</span>
               <div class="q-now-text">
-                <strong id="q-now-headline">Ninguém na frente! Pagou, assumiu o controle na hora.</strong>
+                <strong id="q-now-headline">Ninguém na frente! Pagou, assumiu o controle do PS5 na hora.</strong>
                 <span id="q-now-sub">Seu cronômetro só começa a rodar no segundo em que chegar a sua vez no PS5.</span>
               </div>
             </div>
@@ -92,20 +92,18 @@
             </div>
           </div>
 
-          <!-- Lista Visual das Pessoas Esperando na Fila (Aparece automaticamente quando há fila) -->
+          <!-- Lista Visual das Pessoas Esperando na Fila -->
           <div class="queue-waiting-list hidden" id="queue-waiting-list"></div>
         </div>
       </div>
     </section>
 
-    <!-- Cabeçalho de Preços + Alternador PIX / Crypto -->
-    <section class="compact-hero">
-      <div class="hero-left">
-        <span class="eyebrow">AVULSO BASE: R$ 22,75/H (R$ 3,80 / 10 MIN) • QUANTO MAIOR O PACOTE, MAIS TEMPO GRÁTIS</span>
-        <h1>Escolha seu Pacote e Assuma o <span class="gradient-text">GTA VI</span></h1>
-      </div>
+    <!-- Cabeçalho Centralizado e Harmônico de Preços -->
+    <section class="pricing-header-centered fade-in-up">
+      <span class="eyebrow">TABELA OFICIAL • QUANTO MAIOR O PACOTE, MAIS MINUTOS GRÁTIS E MENOR O VALOR POR HORA</span>
+      <h1>Escolha seu Tempo e <span class="gradient-text">Jogue GTA VI Agora</span></h1>
 
-      <!-- Alternador Rápido PIX vs Crypto (-15% OFF) -->
+      <!-- Alternador Centralizado PIX vs Crypto (-15% OFF) -->
       <div class="payment-toggle-card" role="group" aria-label="Moeda de exibição">
         <button type="button" class="pay-mode-btn active" id="toggle-show-pix">
           <span>PIX Instantâneo</span>
@@ -117,253 +115,235 @@
       </div>
     </section>
 
-    <!-- Cards de Combos com a Nova Tabela Oficial e Gatilhos de Venda para Pacotes Maiores -->
-    <section class="pricing-grid" aria-label="Pacotes de Tempo">
+    <!-- Cards de Combos Centralizados e Fluidos -->
+    <section class="pricing-grid fade-in-up" aria-label="Pacotes de Tempo">
       <!-- Card 1: Teste Rápido (10 min - R$ 3,80) -->
       <article class="price-card" data-pkg="trial_10m">
-        <div>
-          <span class="tier-tag">ENTRADA • 0% DESCONTO</span>
-          <h3>Teste Rápido <span class="sub-mins">(10 min)</span></h3>
+        <div class="card-body-centered">
+          <span class="tier-tag">ACESSO RÁPIDO</span>
+          <h3>Teste Rápido</h3>
+          <span class="duration-pill">10 Minutos</span>
+
           <div class="price-block">
             <div class="price-old">Avulso: R$ 3,79</div>
             <div class="price-main" id="card-price-trial_10m" data-base-price="3.80">R$ 3,80</div>
-            <div class="price-rate">Sai por <strong>R$ 3,80 / 10m</strong> (R$ 22,80/h)</div>
+            <div class="price-rate"><strong>R$ 3,80 / 10m</strong> • R$ 22,80/h</div>
           </div>
+
           <ul class="feature-list">
-            <li><span>✓</span> 10 min apenas para testar o controle</li>
-            <li class="muted"><span>✕</span> Preço cheio sem desconto (0,0%)</li>
-            <li class="muted"><span>✕</span> Curto demais p/ completar missão</li>
+            <li><span>✓</span> <strong>10 minutos</strong> de controle ao vivo</li>
+            <li><span>✓</span> Liberação imediata na sessão</li>
           </ul>
         </div>
         <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="trial_10m">
-          Escolher 10 Min
+          Jogar 10 Minutos →
         </button>
       </article>
 
-      <!-- Card 2: Sessão 1 Hora (60m - R$ 22,75) - Âncora & Chamariz -->
+      <!-- Card 2: Sessão 1 Hora (60m - R$ 22,75) -->
       <article class="price-card decoy-card" data-pkg="hour_1h">
-        <div>
-          <span class="tier-tag">TARIFA BASE • 0% DESCONTO</span>
-          <h3>Sessão 1 Hora <span class="sub-mins">(60m)</span></h3>
+        <div class="card-body-centered">
+          <span class="tier-tag">TARIFA PADRÃO</span>
+          <h3>Sessão 1 Hora</h3>
+          <span class="duration-pill">60 Minutos</span>
+
           <div class="price-block">
-            <div class="price-old">Tarifa Avulsa Padrão</div>
+            <div class="price-old">Tarifa Base: R$ 22,75/h</div>
             <div class="price-main" id="card-price-hour_1h" data-base-price="22.75">R$ 22,75</div>
-            <div class="price-rate">Sai por <strong>R$ 3,79 / 10m</strong> (R$ 22,75/h)</div>
+            <div class="price-rate"><strong>R$ 3,79 / 10m</strong> • R$ 22,75/h</div>
           </div>
+
           <div class="upsell-nudge">
-            🔥 <strong>Gatilho de Combo:</strong> No <strong>Combo 2h10</strong> sua hora cai para <strong>R$ 20,72/h</strong> e você ganha <strong>+10 min grátis (R$ 4,39 de economia)!</strong>
+            💡 No <strong>Combo 2h10</strong> a hora cai p/ <strong>R$ 20,72/h</strong> e você ganha <strong>+10m grátis!</strong>
           </div>
+
           <ul class="feature-list">
-            <li><span>✓</span> 60 minutos na sessão contínua</li>
-            <li class="muted"><span>✕</span> Sem minutos grátis de bônus</li>
+            <li><span>✓</span> <strong>60 minutos</strong> de sessão contínua</li>
           </ul>
         </div>
         <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="hour_1h">
-          Escolher 1 Hora
+          Jogar 1 Hora →
         </button>
       </article>
 
       <!-- Card 3: Combo Heist Leonida (Mais Vendido - 2h10 por R$ 44,90) -->
       <article class="price-card featured-card active-card" data-pkg="combo_2h">
-        <div class="popular-ribbon">🔥 MAIS VENDIDO • ECONOMIZE R$ 4,39 (8,9% OFF)</div>
-        <div>
+        <div class="popular-ribbon">🔥 MAIS VENDIDO • 8,9% OFF</div>
+        <div class="card-body-centered">
           <span class="tier-tag tag-gold">COMBO HEIST LEONIDA</span>
-          <h3>2 Horas <span class="bonus-inline">+10m Grátis</span></h3>
+          <h3>Combo 2h10</h3>
+          <span class="duration-pill duration-pill-gold">2 Horas + 10 Min Grátis</span>
+
           <div class="price-block">
-            <div class="price-old">Avulso (2h10): R$ 49,29</div>
+            <div class="price-old">Avulso: R$ 49,29</div>
             <div class="price-main" id="card-price-combo_2h" data-base-price="44.90">R$ 44,90</div>
-            <div class="price-rate text-green">Cai p/ <strong>R$ 3,45 / 10m</strong> • <strong>R$ 20,72/h</strong></div>
+            <div class="price-rate text-green"><strong>R$ 3,45 / 10m</strong> • <strong>R$ 20,72/h</strong></div>
           </div>
+
           <ul class="feature-list">
-            <li><span>★</span> <strong>130 min totais</strong> (2h + 10m de presente)</li>
-            <li><span>★</span> <strong>Economia real de R$ 4,39</strong> (8,9% OFF)</li>
-            <li><span>★</span> Tempo ideal para fazer golpes completos</li>
+            <li><span>★</span> <strong>2h10 de jogo</strong> (10 min de bônus grátis)</li>
+            <li><span>★</span> <strong>Economize R$ 4,39</strong> (8,9% de desconto)</li>
+            <li><span>★</span> Melhor custo-benefício para missões</li>
           </ul>
         </div>
         <button type="button" class="btn-select-pkg btn-featured" data-select-pkg="combo_2h">
-          Combo Selecionado ✓
+          🎮 JOGAR COMBO 2H10 AGORA
         </button>
       </article>
 
       <!-- Card 4: Passaporte Madrugada (4h25 por R$ 86,90) -->
       <article class="price-card" data-pkg="pass_4h">
-        <div>
-          <span class="tier-tag tag-cyan">MAIOR DESCONTO • 13,5% OFF</span>
-          <h3>Passaporte 4h <span class="bonus-inline">+25m Grátis</span></h3>
+        <div class="card-body-centered">
+          <span class="tier-tag tag-cyan">MAIOR ECONOMIA • 13,5% OFF</span>
+          <h3>Passaporte 4h25</h3>
+          <span class="duration-pill duration-pill-cyan">4 Horas + 25 Min Grátis</span>
+
           <div class="price-block">
-            <div class="price-old">Avulso (4h25): R$ 100,48</div>
+            <div class="price-old">Avulso: R$ 100,48</div>
             <div class="price-main" id="card-price-pass_4h" data-base-price="86.90">R$ 86,90</div>
-            <div class="price-rate text-green">Cai p/ <strong>R$ 3,28 / 10m</strong> • <strong>R$ 19,68/h</strong></div>
+            <div class="price-rate text-green"><strong>R$ 3,28 / 10m</strong> • <strong>R$ 19,68/h</strong></div>
           </div>
+
           <ul class="feature-list">
-            <li><span>✓</span> <strong>265 min contínuos</strong> (4h + 25m grátis)</li>
-            <li><span>✓</span> <strong>Você embolsa R$ 13,58 de desconto!</strong></li>
-            <li><span>✓</span> Menor custo por hora do site (R$ 19,68/h)</li>
+            <li><span>✓</span> <strong>4h25 de jogo</strong> (25 min de bônus grátis)</li>
+            <li><span>✓</span> <strong>Economize R$ 13,58</strong> (13,5% de desconto)</li>
+            <li><span>✓</span> Menor valor por hora do site (R$ 19,68/h)</li>
           </ul>
         </div>
         <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="pass_4h">
-          Escolher 4h25
+          Jogar 4h25 Com Desconto →
         </button>
       </article>
     </section>
 
-    <!-- Painel Direto: Simulador + Checkout em uma única visão -->
-    <section id="checkout-area" class="calc-layout">
-      <!-- Esquerda: Ajuste Fino de Tempo + Order Bump 1-Clique -->
-      <div class="calc-panel">
-        <div class="slider-header">
-          <div>
-            <span class="eyebrow">SIMULADOR DE TEMPO & ECONOMIA PROGRESSIVA</span>
-            <div class="time-row">
-              <span class="slider-time-big" id="slider-time-display">2h 00min</span>
-              <span class="slider-bonus-tag" id="slider-bonus-display">+10 min grátis</span>
-            </div>
-          </div>
-          <div class="slider-rate-box">
-            <span class="rate-lbl">Sai por 10m / Hora:</span>
-            <span class="rate-val" id="slider-rate-10m">R$ 3,45 / 10m (R$ 20,72/h)</span>
-          </div>
+    <!-- BANNER CTA PRINCIPAL FORTE E CLARO PARA JOGAR AGORA -->
+    <section class="cta-banner-section fade-in-up">
+      <div class="cta-banner-inner">
+        <div class="cta-banner-info">
+          <span class="cta-live-indicator">⚡ LIBERAÇÃO AUTOMÁTICA VIA PIX OU CRYPTO</span>
+          <h2 id="cta-selected-title">Selecionado: Combo Heist Leonida (2h10) — R$ 44,90</h2>
+          <p id="cta-selected-sub">Você recebe o PIN e o link de controle na mesma hora em que o pagamento confirma.</p>
         </div>
-
-        <input
-          type="range"
-          id="time-slider"
-          min="10"
-          max="240"
-          step="10"
-          value="120"
-          aria-label="Selecionar tempo em minutos"
-        />
-
-        <div class="slider-Ticks">
-          <span>10m (R$3,80)</span>
-          <span>1h (R$22,75)</span>
-          <span class="tick-highlight">★ 2h10 Combo (R$44,90)</span>
-          <span>4h25 VIP (R$86,90)</span>
-        </div>
-
-        <!-- Gatilho Dinâmico para Comprar Pacotes Maiores -->
-        <div class="smart-upsell-alert" id="smart-upsell-box">
-          <div class="upsell-icon">🍟</div>
-          <div class="upsell-text" id="smart-upsell-text">
-            <strong>Combo Heist Leonida Ativo!</strong> Você economiza <strong>R$ 4,39 (8,9% OFF)</strong> e ganha <strong>+10 min grátis</strong>.
-          </div>
-          <button type="button" class="btn-upsell-jump hidden" id="btn-upsell-upgrade">
-            Subir p/ Combo
-          </button>
-        </div>
-
-        <!-- Order Bump de 1 Clique (+30 Minutos Extras na Mesma Sessão) -->
-        <label class="order-bump-card" for="chk-order-bump">
-          <input type="checkbox" id="chk-order-bump" />
-          <div class="bump-content">
-            <div class="bump-header">
-              <span class="bump-badge">OFERTA DE CHECKOUT • 1 CLIQUE</span>
-              <span class="bump-price" id="bump-price-display">+ R$ 9,90</span>
-            </div>
-            <h4>Adicionar +30 Minutos Extras Direto na Sua Sessão</h4>
-            <p>No preço avulso 30 minutos custam R$ 11,38. Adicione agora por apenas <strong>R$ 9,90</strong> e não corra o risco do seu tempo acabar no meio da fuga!</p>
-          </div>
-        </label>
-      </div>
-
-      <!-- Direita: Checkout Rápido (Login + Pix/Crypto + Botão Jogar/Entrar na Fila) -->
-      <aside class="checkout-panel">
-        <div class="checkout-header">
-          <h3 id="checkout-panel-title">Liberar Controle do PS5</h3>
-          <span class="secure-pill">🔒 Anti-Fraude Ativo</span>
-        </div>
-
-        <!-- 1. Conta rápida -->
-        <div class="checkout-step">
-          <div id="checkout-auth-prompt" class="checkout-auth-box">
-            <span class="auth-hint">1. Vincule seu Discord ou Google para garantir sua vaga e receber o PIN:</span>
-            <div class="checkout-auth-btns">
-              <button type="button" class="btn-auth-full btn-discord" id="chk-btn-discord">
-                Conectar Discord
-              </button>
-              <button type="button" class="btn-auth-full btn-google" id="chk-btn-google">
-                Conectar Google
-              </button>
-            </div>
-          </div>
-          <div id="checkout-auth-logged" class="checkout-logged-box hidden">
-            <span class="logged-check">✓</span>
-            <div>
-              <strong id="chk-user-label">usuario#0001</strong>
-              <span class="logged-sub">Cota de tempo e PIN vinculados à sessão</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. Forma de Pagamento -->
-        <div class="checkout-step">
-          <div class="pay-selector">
-            <label class="pay-option selected" id="lbl-pay-pix">
-              <input type="radio" name="paymentMethod" value="pix" checked />
-              <div class="pay-opt-body">
-                <span class="pay-opt-title">PIX Instantâneo</span>
-                <span class="pay-opt-sub">Libera em 3 segundos</span>
-              </div>
-            </label>
-
-            <label class="pay-option" id="lbl-pay-usdt">
-              <input type="radio" name="paymentMethod" value="usdt" />
-              <div class="pay-opt-body">
-                <div class="pay-opt-row">
-                  <span class="pay-opt-title">Crypto</span>
-                  <span class="crypto-badge-sm">15% OFF</span>
-                </div>
-                <span class="pay-opt-sub">USDT, BTC ou Solana</span>
-              </div>
-            </label>
-          </div>
-
-          <div class="crypto-coins hidden" id="crypto-coins-bar">
-            <button type="button" class="coin-btn active" data-coin="usdt">USDT</button>
-            <button type="button" class="coin-btn" data-coin="btc">BTC (Lightning)</button>
-            <button type="button" class="coin-btn" data-coin="sol">Solana</button>
-          </div>
-        </div>
-
-        <!-- Resumo Final Direto -->
-        <div class="receipt-box">
-          <div class="receipt-row">
-            <span id="receipt-pkg-name">Combo Heist Leonida (2h10)</span>
-            <span id="receipt-pkg-price">R$ 44,90</span>
-          </div>
-          <div class="receipt-row" id="receipt-bonus-row">
-            <span class="text-green">Bônus do Pacote (+10 min)</span>
-            <span class="text-green">GRÁTIS</span>
-          </div>
-          <div class="receipt-row hidden" id="receipt-bump-row">
-            <span>Boost +30 Minutos Extras</span>
-            <span id="receipt-bump-val">+ R$ 9,90</span>
-          </div>
-          <div class="receipt-row hidden text-green" id="receipt-crypto-row">
-            <span>Desconto Crypto (15% OFF)</span>
-            <span id="receipt-crypto-discount">- R$ 6,74</span>
-          </div>
-          <div class="receipt-divider"></div>
-          <div class="receipt-total-row">
-            <div>
-              <span class="total-lbl">Tempo Total Liberado</span>
-              <strong class="total-time-val" id="receipt-total-time">2h 10min (130 min)</strong>
-            </div>
-            <div class="total-price-col">
-              <span class="total-lbl">Total a Pagar</span>
-              <strong class="total-price-val" id="receipt-total-price">R$ 44,90</strong>
-              <span class="total-usdt-val hidden" id="receipt-total-usdt">≈ 7.63 USDT</span>
-            </div>
-          </div>
-        </div>
-
-        <button type="button" class="btn-checkout-submit" id="btn-submit-order">
-          Gerar PIX / Crypto e Assumir o Controle
+        <button type="button" class="btn-mega-cta" id="btn-open-checkout-popup">
+          <span>🎮 JOGAR GTA VI AGORA</span>
+          <small id="btn-mega-cta-sub">Abrir Checkout Instantâneo →</small>
         </button>
-      </aside>
+      </div>
     </section>
   </main>
+
+  <!-- POPUP DE CHECKOUT ("Liberar Controle do PS5" exibido em Popup limpo e focado) -->
+  <div class="modal-backdrop hidden" id="checkout-popup-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-panel-title">
+    <div class="modal-card checkout-modal-card">
+      <div class="checkout-header">
+        <div>
+          <span class="secure-pill">🔒 Anti-Fraude Ativo</span>
+          <h3 id="checkout-panel-title">Liberar Controle do PS5</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-checkout-popup" aria-label="Fechar">✕</button>
+      </div>
+
+      <!-- 1. Conta rápida -->
+      <div class="checkout-step">
+        <div id="checkout-auth-prompt" class="checkout-auth-box">
+          <span class="auth-hint">1. Vincule seu Discord ou Google para garantir sua vaga e receber o PIN:</span>
+          <div class="checkout-auth-btns">
+            <button type="button" class="btn-auth-full btn-discord" id="chk-btn-discord">
+              Conectar Discord
+            </button>
+            <button type="button" class="btn-auth-full btn-google" id="chk-btn-google">
+              Conectar Google
+            </button>
+          </div>
+        </div>
+        <div id="checkout-auth-logged" class="checkout-logged-box hidden">
+          <span class="logged-check">✓</span>
+          <div>
+            <strong id="chk-user-label">usuario#0001</strong>
+            <span class="logged-sub">Cota de tempo e PIN vinculados à sessão</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Forma de Pagamento -->
+      <div class="checkout-step">
+        <div class="pay-selector">
+          <label class="pay-option selected" id="lbl-pay-pix">
+            <input type="radio" name="paymentMethod" value="pix" checked />
+            <div class="pay-opt-body">
+              <span class="pay-opt-title">PIX Instantâneo</span>
+              <span class="pay-opt-sub">Libera em 3 segundos</span>
+            </div>
+          </label>
+
+          <label class="pay-option" id="lbl-pay-usdt">
+            <input type="radio" name="paymentMethod" value="usdt" />
+            <div class="pay-opt-body">
+              <div class="pay-opt-row">
+                <span class="pay-opt-title">Crypto</span>
+                <span class="crypto-badge-sm">15% OFF</span>
+              </div>
+              <span class="pay-opt-sub">USDT, BTC ou Solana</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="crypto-coins hidden" id="crypto-coins-bar">
+          <button type="button" class="coin-btn active" data-coin="usdt">USDT</button>
+          <button type="button" class="coin-btn" data-coin="btc">BTC (Lightning)</button>
+          <button type="button" class="coin-btn" data-coin="sol">Solana</button>
+        </div>
+      </div>
+
+      <!-- 3. Order Bump Opcional 1-Clique dentro do Popup -->
+      <label class="order-bump-card compact-bump" for="chk-order-bump">
+        <input type="checkbox" id="chk-order-bump" />
+        <div class="bump-content">
+          <div class="bump-header">
+            <span class="bump-badge">⚡ TURBINAR SESSÃO (OPCIONAL)</span>
+            <span class="bump-price" id="bump-price-display">+ R$ 9,90</span>
+          </div>
+          <h4>Adicionar +30 Minutos Extras na Mesma Sessão</h4>
+        </div>
+      </label>
+
+      <!-- Resumo Final Direto -->
+      <div class="receipt-box">
+        <div class="receipt-row">
+          <span id="receipt-pkg-name">Combo Heist Leonida (2h10)</span>
+          <span id="receipt-pkg-price">R$ 44,90</span>
+        </div>
+        <div class="receipt-row" id="receipt-bonus-row">
+          <span class="text-green">Bônus do Pacote (+10 min)</span>
+          <span class="text-green">GRÁTIS</span>
+        </div>
+        <div class="receipt-row hidden" id="receipt-bump-row">
+          <span>Boost +30 Minutos Extras</span>
+          <span id="receipt-bump-val">+ R$ 9,90</span>
+        </div>
+        <div class="receipt-row hidden text-green" id="receipt-crypto-row">
+          <span>Desconto Crypto (15% OFF)</span>
+          <span id="receipt-crypto-discount">- R$ 6,74</span>
+        </div>
+        <div class="receipt-divider"></div>
+        <div class="receipt-total-row">
+          <div>
+            <span class="total-lbl">Tempo Total Liberado</span>
+            <strong class="total-time-val" id="receipt-total-time">2h 10min (130 min)</strong>
+          </div>
+          <div class="total-price-col">
+            <span class="total-lbl">Total a Pagar</span>
+            <strong class="total-price-val" id="receipt-total-price">R$ 44,90</strong>
+            <span class="total-usdt-val hidden" id="receipt-total-usdt">≈ 7.63 USDT</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn-checkout-submit" id="btn-submit-order">
+        Gerar PIX / Crypto e Assumir o Controle Agora
+      </button>
+    </div>
+  </div>
 
   <!-- Modal Login Rápido (Discord / Google) -->
   <div class="modal-backdrop hidden" id="auth-modal" role="dialog" aria-modal="true">

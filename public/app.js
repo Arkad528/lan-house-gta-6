@@ -1,5 +1,5 @@
 /**
- * viceplay.cloud - Frontend Principal + Fila em Tempo Real (FIFO) + Nova Tabela de Preços
+ * viceplay.cloud - Frontend Principal + Popup Checkout Fluido + Fila em Tempo Real (FIFO)
  */
 
 (function () {
@@ -8,7 +8,6 @@
   const state = {
     csrfToken: null,
     selectedPackageId: 'combo_2h',
-    customMinutes: null,
     includeBump: false,
     paymentMethod: 'pix', // 'pix' | 'usdt' | 'btc' | 'sol'
     cryptoCoin: 'usdt',
@@ -20,7 +19,7 @@
     ps5Public: null
   };
 
-  // Nova Tabela Oficial (Avulso R$ 22,75/h | R$ 3,80 por 10m)
+  // Tabela Oficial (Avulso R$ 22,75/h | R$ 3,80 por 10m)
   const PACKAGES_CLIENT = {
     trial_10m: {
       id: 'trial_10m',
@@ -174,7 +173,6 @@
         submitBtn.textContent = `Garantir Minha Vaga na Fila (#${qSummary.peopleAheadCount + 1})`;
       }
 
-      // Renderizar os chips de quem está jogando + quem está na fila esperando
       if (qWaitingList) {
         qWaitingList.classList.remove('hidden');
         const activeChip = `
@@ -247,66 +245,11 @@
   }
 
   function computeCurrentSelection() {
-    const p10 = PACKAGES_CLIENT.trial_10m.priceBRL;   // 3.80
-    const p60 = PACKAGES_CLIENT.hour_1h.priceBRL;     // 22.75
-    const p120 = PACKAGES_CLIENT.combo_2h.priceBRL;   // 44.90 (+10m grátis = 130m)
-    const p240 = PACKAGES_CLIENT.pass_4h.priceBRL;    // 86.90 (+25m grátis = 265m)
-
-    let baseMinutes = 120;
-    let basePrice = p120;
-    let bonusMinutes = 10;
-    let title = PACKAGES_CLIENT.combo_2h.name;
-
-    if (state.selectedPackageId && PACKAGES_CLIENT[state.selectedPackageId]) {
-      const pkg = PACKAGES_CLIENT[state.selectedPackageId];
-      baseMinutes = pkg.minutes;
-      basePrice = pkg.priceBRL;
-      bonusMinutes = pkg.bonusMinutes;
-      title = pkg.name;
-    } else if (state.customMinutes) {
-      const m = state.customMinutes;
-      baseMinutes = m;
-
-      if (m === 10) {
-        basePrice = p10;
-        bonusMinutes = 0;
-      } else if (m <= 60) {
-        basePrice = p10 + ((m - 10) / 50) * (p60 - p10);
-        bonusMinutes = 0;
-      } else if (m < 120) {
-        basePrice = p60 + ((m - 60) / 60) * (p120 - p60);
-        bonusMinutes = 0;
-      } else if (m === 120) {
-        basePrice = p120;
-        bonusMinutes = 10;
-      } else if (m < 240) {
-        basePrice = p120 + ((m - 120) / 120) * (p240 - p120);
-        bonusMinutes = 10;
-      } else {
-        basePrice = p240;
-        bonusMinutes = 25;
-      }
-      basePrice = Math.round(basePrice * 100) / 100;
-      title = `Sessão Personalizada (${m} min)`;
-    }
-
-    // Gatilhos Mentais Fortes para Comprar Pacotes Maiores
-    let upsellMessage = '';
-    let upsellTargetPkg = null;
-
-    if (baseMinutes < 60) {
-      upsellMessage = `⚠️ <strong>10 min passam voando nas cutscenes!</strong> Suba para o <strong>Combo Heist 2h10</strong> para derrubar sua hora de R$ 22,80/h para <strong>R$ 20,72/h + 10 min grátis (R$ 4,39 de economia)</strong>!`;
-      upsellTargetPkg = 'combo_2h';
-    } else if (baseMinutes >= 60 && baseMinutes < 120) {
-      upsellMessage = `🍟 <strong>Efeito Combo:</strong> Em 1 hora você paga o preço cheio (R$ 22,75/h e 0% de desconto). No <strong>Combo 2h10</strong> você ganha <strong>+10 min grátis</strong>, derruba a hora para <strong>R$ 20,72/h</strong> e economiza <strong>R$ 4,39</strong>!`;
-      upsellTargetPkg = 'combo_2h';
-    } else if (baseMinutes >= 120 && baseMinutes < 240) {
-      upsellMessage = `🔥 <strong>Combo Heist 2h10 Ativo (R$ 4,39 de economia + 10m grátis)!</strong> Quer o maior desconto do site? No <strong>Passaporte 4h25</strong> a hora cai para <strong>R$ 19,68/h</strong> e você economiza <strong>R$ 13,58 (+25m grátis)</strong>!`;
-      upsellTargetPkg = 'pass_4h';
-    } else {
-      upsellMessage = `👑 <strong>Passaporte Madrugada 4h25 Ativo!</strong> Você destravou <strong>13,5% OFF (R$ 13,58 de economia real)</strong> + <strong>25 minutos grátis</strong> (menor valor por hora: R$ 19,68/h).`;
-      upsellTargetPkg = null;
-    }
+    const pkg = PACKAGES_CLIENT[state.selectedPackageId] || PACKAGES_CLIENT.combo_2h;
+    const baseMinutes = pkg.minutes;
+    const basePrice = pkg.priceBRL;
+    const bonusMinutes = pkg.bonusMinutes;
+    const title = pkg.name;
 
     const bumpPrice = state.includeBump ? state.bumpPriceBRL : 0;
     const bumpMinutes = state.includeBump ? BUMP_MINUTES : 0;
@@ -315,8 +258,6 @@
     const cryptoDiscount = isCrypto ? Math.round(subtotal * state.cryptoDiscountRate * 100) / 100 : 0;
     const totalBRL = Math.round((subtotal - cryptoDiscount) * 100) / 100;
     const totalMinutes = baseMinutes + bonusMinutes + bumpMinutes;
-    const effectiveRate10m = totalBRL / (totalMinutes / 10);
-    const effectiveRateHour = effectiveRate10m * 6;
 
     return {
       title,
@@ -330,11 +271,7 @@
       cryptoDiscount,
       totalBRL,
       totalUSDT: (totalBRL / 5.0).toFixed(2),
-      totalMinutes,
-      effectiveRate10m,
-      effectiveRateHour,
-      upsellMessage,
-      upsellTargetPkg
+      totalMinutes
     };
   }
 
@@ -355,17 +292,13 @@
       const isSelected = state.selectedPackageId === pkgId;
       card.classList.toggle('active-card', isSelected);
       if (btn) {
-        if (isSelected) {
-          btn.textContent = 'Selecionado ✓';
-        } else {
-          const labels = {
-            trial_10m: 'Escolher 10 Min',
-            hour_1h: 'Escolher 1 Hora',
-            combo_2h: 'Quero o Combo 2h10',
-            pass_4h: 'Escolher 4h25'
-          };
-          btn.textContent = labels[pkgId] || 'Escolher';
-        }
+        const labels = {
+          trial_10m: isSelected ? '🎮 JOGAR 10 MIN AGORA' : 'Jogar 10 Minutos →',
+          hour_1h: isSelected ? '🎮 JOGAR 1 HORA AGORA' : 'Jogar 1 Hora →',
+          combo_2h: isSelected ? '🎮 JOGAR COMBO 2H10 AGORA' : 'Quero o Combo 2h10 →',
+          pass_4h: isSelected ? '🎮 JOGAR 4H25 AGORA' : 'Jogar 4h25 Com Desconto →'
+        };
+        btn.textContent = labels[pkgId] || 'Jogar Agora →';
       }
     });
   }
@@ -395,34 +328,17 @@
     }
   }
 
-  function renderCalculatorAndCheckout() {
+  function renderCheckoutAndBanner() {
     const calc = computeCurrentSelection();
 
-    document.getElementById('time-slider').value = calc.baseMinutes;
-    document.getElementById('slider-time-display').textContent = formatDuration(calc.baseMinutes);
-
-    const bonusTag = document.getElementById('slider-bonus-display');
-    if (calc.bonusMinutes > 0) {
-      bonusTag.textContent = `+${calc.bonusMinutes} min grátis`;
-      bonusTag.classList.remove('hidden');
-    } else {
-      bonusTag.classList.add('hidden');
+    // Atualizar Banner CTA Principal na Página
+    const ctaTitle = document.getElementById('cta-selected-title');
+    if (ctaTitle) {
+      ctaTitle.textContent = `Selecionado: ${calc.title} — ${formatBRL(calc.totalBRL)}`;
     }
-
-    document.getElementById('slider-rate-10m').textContent = `${formatBRL(calc.effectiveRate10m)} / 10m (${formatBRL(calc.effectiveRateHour)}/h)`;
-    document.getElementById('smart-upsell-text').innerHTML = calc.upsellMessage;
-
-    const btnUpgrade = document.getElementById('btn-upsell-upgrade');
-    if (calc.upsellTargetPkg) {
-      btnUpgrade.classList.remove('hidden');
-      btnUpgrade.textContent = calc.upsellTargetPkg === 'combo_2h' ? 'Pegar Combo 2h10' : 'Pegar Passaporte 4h25';
-      btnUpgrade.onclick = () => {
-        state.selectedPackageId = calc.upsellTargetPkg;
-        state.customMinutes = null;
-        renderAll();
-      };
-    } else {
-      btnUpgrade.classList.add('hidden');
+    const ctaSubBtn = document.getElementById('btn-mega-cta-sub');
+    if (ctaSubBtn) {
+      ctaSubBtn.textContent = `Liberar ${formatDuration(calc.totalMinutes)} por ${formatBRL(calc.totalBRL)} →`;
     }
 
     const isCrypto = calc.isCrypto;
@@ -466,7 +382,16 @@
   function renderAll() {
     renderPricingCards();
     renderAuthUI();
-    renderCalculatorAndCheckout();
+    renderCheckoutAndBanner();
+  }
+
+  function openCheckoutPopup() {
+    renderAll();
+    document.getElementById('checkout-popup-modal').classList.remove('hidden');
+  }
+
+  function closeCheckoutPopup() {
+    document.getElementById('checkout-popup-modal').classList.add('hidden');
   }
 
   function openAuthModal(provider, autoCheckout = false) {
@@ -508,7 +433,7 @@
         provider: state.user.provider,
         userHandle: state.user.handle,
         packageId: state.selectedPackageId,
-        customMinutes: state.customMinutes,
+        customMinutes: null,
         includeBump: state.includeBump,
         paymentMethod: state.paymentMethod
       };
@@ -528,6 +453,7 @@
         return;
       }
 
+      closeCheckoutPopup();
       openOrderModal(data.order);
     } catch (err) {
       alert('Erro de conexão com o servidor.');
@@ -616,6 +542,22 @@
       });
     }
 
+    // Botão Jogar Agora na Tela Ao Vivo e no Mega CTA Banner
+    const btnHeroPlay = document.getElementById('btn-hero-play-now');
+    if (btnHeroPlay) {
+      btnHeroPlay.addEventListener('click', openCheckoutPopup);
+    }
+
+    const btnOpenPopup = document.getElementById('btn-open-checkout-popup');
+    if (btnOpenPopup) {
+      btnOpenPopup.addEventListener('click', openCheckoutPopup);
+    }
+
+    const btnClosePopup = document.getElementById('btn-close-checkout-popup');
+    if (btnClosePopup) {
+      btnClosePopup.addEventListener('click', closeCheckoutPopup);
+    }
+
     document.getElementById('toggle-show-pix').addEventListener('click', () => {
       state.showCryptoInCards = false;
       state.paymentMethod = 'pix';
@@ -630,28 +572,18 @@
       renderAll();
     });
 
+    // Clicar em qualquer pacote seleciona e já abre o Popup de Checkout!
     document.querySelectorAll('[data-select-pkg]').forEach((btn) => {
       btn.addEventListener('click', () => {
         state.selectedPackageId = btn.getAttribute('data-select-pkg');
-        state.customMinutes = null;
         renderAll();
+        openCheckoutPopup();
       });
-    });
-
-    document.getElementById('time-slider').addEventListener('input', (e) => {
-      const mins = parseInt(e.target.value, 10);
-      state.customMinutes = mins;
-      if (mins === 10) state.selectedPackageId = 'trial_10m';
-      else if (mins === 60) state.selectedPackageId = 'hour_1h';
-      else if (mins === 120) state.selectedPackageId = 'combo_2h';
-      else if (mins === 240) state.selectedPackageId = 'pass_4h';
-      else state.selectedPackageId = null;
-      renderAll();
     });
 
     document.getElementById('chk-order-bump').addEventListener('change', (e) => {
       state.includeBump = e.target.checked;
-      renderCalculatorAndCheckout();
+      renderCheckoutAndBanner();
     });
 
     document.querySelectorAll('input[name="paymentMethod"]').forEach((radio) => {
@@ -673,7 +605,7 @@
         btn.classList.add('active');
         state.cryptoCoin = btn.getAttribute('data-coin');
         state.paymentMethod = state.cryptoCoin;
-        renderCalculatorAndCheckout();
+        renderCheckoutAndBanner();
       });
     });
 
