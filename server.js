@@ -1,7 +1,11 @@
+'use strict';
 /**
- * viceplay.cloud - Lan House Digital GTA VI (PS5)
- * Servidor Backend + Fila em Tempo Real (FIFO) + Painel Admin (/admin) + Live Stream PS5
- * Credenciais Admin: Usuário 5288 | Senha 5288
+ * viceplay.cloud — Lan House Digital PS5 (GTA VI)
+ * - Login real via OAuth2 (Discord e Google), sessão em cookie HttpOnly assinado (HMAC-SHA256)
+ * - Fila FIFO em tempo real, preços validados 100% no servidor
+ * - PIX "copia e cola" válido (padrão EMV/BR Code com CRC16)
+ * - Painel /admin com proteção contra força bruta
+ * Sem dependências externas (Node 18+).
  */
 
 const http = require('http');
@@ -9,590 +13,798 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const PORT = process.env.PORT || 3000;
-const CSRF_SECRET = process.env.CSRF_SECRET || 'viceplay-cloud-ps5-hmac-secret-2026-gta6';
-const ADMIN_USER = '5288';
-const ADMIN_PASS = '5288';
+// ---------------------------------------------------------------------------
+// .env (carregador simples, sem dependência)
+// ---------------------------------------------------------------------------
+(function loadEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!m || process.env[m[1]] !== undefined) continue;
+    let v = m[2];
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    process.env[m[1]] = v;
+  }
+})();
 
-// Estado Dinâmico do PS5, Transmissão e Fila Real (FIFO - Ordem de Chegada, sem furar fila)
+const ENV = {
+  PORT: Number(process.env.PORT) || 3000,
+  BASE_URL: (process.env.BASE_URL || '').replace(/\/+$/, ''),
+  ADMIN_USER: process.env.ADMIN_USER || '5288',
+  ADMIN_PASS: process.env.ADMIN_PASS || '5288',
+  DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
+  DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
+  DEMO_MODE: process.env.DEMO_MODE !== 'false',
+  TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
+};
+
+let SECRET = process.env.SESSION_SECRET || '';
+if (!SECRET) {
+  SECRET = crypto.randomBytes(32).toString('hex');
+  console.warn('[viceplay] SESSION_SECRET não definido: usando segredo temporário (logins caem ao reiniciar).');
+}
+
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// ---------------------------------------------------------------------------
+// Estado do PS5, fila e preços (em memória)
+// ---------------------------------------------------------------------------
 const ps5Config = {
-  consoleName: 'viceplay.cloud • PS5 #01',
-  consoleStatus: 'online', // 'online' | 'busy' | 'maintenance'
+  consoleStatus: 'online', // online | busy | maintenance
   ps5LocalIp: '192.168.1.150',
   remotePlayPin: '48291033',
   connectionMode: 'parsec_chiaki',
   parsecInviteUrl: 'https://parsec.gg/g/viceplay-cloud-ps5',
   streamMode: 'youtube',
   streamSourceUrl: 'https://www.youtube.com/embed/QdBZY2fkU-0?autoplay=1&mute=1&loop=1&playlist=QdBZY2fkU-0&controls=1&rel=0',
-  streamTitle: 'AO VIVO em viceplay.cloud • Sessão GTA VI PS5 #01',
-  viewersCount: 18,
-  activePlayer: null, // { orderId, userHandle, provider, remainingSeconds, totalMinutes, startedAt }
-  queue: [], // Array FIFO: [{ orderId, userHandle, provider, totalMinutes, joinedAt }]
+  streamTitle: 'Sessão GTA VI • PS5 #01',
+  activePlayer: null, // { orderId, uid, name, totalMinutes, remainingSeconds, startedAt }
+  queue: [], // [{ orderId, uid, name, totalMinutes, joinedAt }]
   pixKey: 'pix@viceplay.cloud',
+  pixName: 'VICEPLAY CLOUD',
+  pixCity: 'SAO PAULO',
   walletUsdt: '0x71C89A4B29F10cE9824F1B3bA91820E77c9f2A1',
   walletBtc: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
   walletSol: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
 };
 
-// Nova Tabela Oficial de Preços (Base Avulso: R$ 22,75/h | R$ 3,80 por 10 min)
 const packagesConfig = {
-  baseRate10m: 3.80,
-  hourlyBaseBRL: 22.75,
-  bumpPriceBRL: 9.90, // +30 Minutos Extras na mesma sessão (Avulso R$ 11,38 -> R$ 9,90 = 13% OFF)
+  bumpPriceBRL: 9.9,
+  bumpMinutes: 30,
   cryptoDiscountRate: 0.15,
+  usdtRateBRL: 5.0,
   packages: {
-    trial_10m: {
-      id: 'trial_10m',
-      name: 'Teste Rápido (10 min)',
-      minutes: 10,
-      bonusMinutes: 0,
-      totalMinutes: 10,
-      priceBRL: 3.80,
-      originalPriceBRL: 3.79,
-      rate10m: 3.80,
-      rateHour: 22.80,
-      discountPct: '0,0%',
-      savingsBRL: 0
-    },
-    hour_1h: {
-      id: 'hour_1h',
-      name: 'Sessão 1 Hora (60m)',
-      minutes: 60,
-      bonusMinutes: 0,
-      totalMinutes: 60,
-      priceBRL: 22.75,
-      originalPriceBRL: 22.75,
-      rate10m: 3.79,
-      rateHour: 22.75,
-      discountPct: '0,0%',
-      savingsBRL: 0
-    },
-    combo_2h: {
-      id: 'combo_2h',
-      name: 'Combo Heist Leonida (2h10)',
-      minutes: 120,
-      bonusMinutes: 10,
-      totalMinutes: 130,
-      priceBRL: 44.90,
-      originalPriceBRL: 49.29,
-      rate10m: 3.45,
-      rateHour: 20.72,
-      discountPct: '8,9%',
-      savingsBRL: 4.39
-    },
-    pass_4h: {
-      id: 'pass_4h',
-      name: 'Passaporte Madrugada (4h25)',
-      minutes: 240,
-      bonusMinutes: 25,
-      totalMinutes: 265,
-      priceBRL: 86.90,
-      originalPriceBRL: 100.48,
-      rate10m: 3.28,
-      rateHour: 19.68,
-      discountPct: '13,5%',
-      savingsBRL: 13.58
-    }
+    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 3.8 },
+    hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, bonusMinutes: 0, priceBRL: 22.75 },
+    combo_2h: { id: 'combo_2h', name: 'Combo Heist Leonida (2h10)', minutes: 120, bonusMinutes: 10, priceBRL: 44.9 },
+    pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (4h25)', minutes: 240, bonusMinutes: 25, priceBRL: 86.9 }
   }
 };
 
-const ordersList = [];
-const rateLimitMap = new Map();
+const orders = new Map(); // orderId -> order
+const viewers = new Map(); // clientId -> lastSeen
 
-// Promove automaticamente o primeiro da fila quando o console fica livre
-function advanceQueueIfNeeded() {
-  if (!ps5Config.activePlayer && ps5Config.queue.length > 0 && ps5Config.consoleStatus !== 'maintenance') {
-    const nextInLine = ps5Config.queue.shift();
-    ps5Config.activePlayer = {
-      orderId: nextInLine.orderId,
-      userHandle: nextInLine.userHandle,
-      provider: nextInLine.provider,
-      totalMinutes: nextInLine.totalMinutes,
-      remainingSeconds: nextInLine.totalMinutes * 60,
-      startedAt: new Date().toISOString()
-    };
-    ps5Config.consoleStatus = 'busy';
-    const order = ordersList.find((o) => o.orderId === nextInLine.orderId);
-    if (order) order.status = 'active';
-  } else if (!ps5Config.activePlayer && ps5Config.consoleStatus === 'busy') {
-    ps5Config.consoleStatus = 'online';
+// ---------------------------------------------------------------------------
+// Utilitários
+// ---------------------------------------------------------------------------
+const hmac = (data) => crypto.createHmac('sha256', SECRET).update(data).digest('base64url');
+
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+function sign(obj) {
+  const body = Buffer.from(JSON.stringify(obj)).toString('base64url');
+  return `${body}.${hmac(body)}`;
+}
+
+function unsign(token, type) {
+  if (typeof token !== 'string') return null;
+  const i = token.lastIndexOf('.');
+  if (i < 1) return null;
+  const body = token.slice(0, i);
+  const sig = token.slice(i + 1);
+  if (!safeEqual(sig, hmac(body))) return null;
+  try {
+    const obj = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (!obj || obj.t !== type || !obj.exp || Date.now() > obj.exp) return null;
+    return obj;
+  } catch {
+    return null;
   }
 }
 
-// Cronômetro em tempo real da sessão ativa + avanço automático da fila
-setInterval(() => {
-  if (ps5Config.activePlayer && ps5Config.activePlayer.remainingSeconds > 0) {
-    ps5Config.activePlayer.remainingSeconds -= 1;
-    if (ps5Config.activePlayer.remainingSeconds <= 0) {
-      const finishedOrder = ordersList.find((o) => o.orderId === ps5Config.activePlayer.orderId);
-      if (finishedOrder) finishedOrder.status = 'completed';
-      ps5Config.activePlayer = null;
-      advanceQueueIfNeeded();
-    }
+function clip(str, max) {
+  return String(str || '').replace(/[\u0000-\u001f<>`]/g, '').trim().slice(0, max);
+}
+
+function maskName(name) {
+  const n = String(name || 'Jogador');
+  return n.length <= 3 ? `${n[0]}**` : `${n.slice(0, 3)}***`;
+}
+
+function parseCookies(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const idx = part.indexOf('=');
+    if (idx > 0) out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
   }
-}, 1000);
-
-function getQueueWaitSummary() {
-  const activeSeconds = ps5Config.activePlayer ? ps5Config.activePlayer.remainingSeconds : 0;
-  const queuedSeconds = ps5Config.queue.reduce((acc, item) => acc + item.totalMinutes * 60, 0);
-  const totalWaitSeconds = activeSeconds + queuedSeconds;
-
-  let cumulativeSeconds = activeSeconds;
-  const detailedQueue = ps5Config.queue.map((item, idx) => {
-    const waitBeforeThisMinutes = Math.ceil(cumulativeSeconds / 60);
-    cumulativeSeconds += item.totalMinutes * 60;
-    return {
-      position: idx + 1,
-      orderId: item.orderId,
-      userHandle: item.userHandle,
-      provider: item.provider,
-      totalMinutes: item.totalMinutes,
-      estimatedWaitMinutes: waitBeforeThisMinutes
-    };
-  });
-
-  return {
-    peopleAheadCount: (ps5Config.activePlayer ? 1 : 0) + ps5Config.queue.length,
-    queueOnlyCount: ps5Config.queue.length,
-    estimatedWaitMinutesForNewPlayer: Math.ceil(totalWaitSeconds / 60),
-    items: detailedQueue
-  };
+  return out;
 }
 
-function generateSignedToken(prefix = 'csrf') {
-  const ts = Date.now().toString(36);
-  const nonce = crypto.randomBytes(12).toString('hex');
-  const payload = `${prefix}.${ts}.${nonce}`;
-  const sig = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('hex').slice(0, 32);
-  return `${payload}.${sig}`;
+function getBaseUrl(req) {
+  if (ENV.BASE_URL) return ENV.BASE_URL;
+  const fwd = ENV.TRUST_PROXY && req.headers['x-forwarded-proto'];
+  const proto = fwd ? String(fwd).split(',')[0].trim() : 'http';
+  return `${proto}://${req.headers.host || `localhost:${ENV.PORT}`}`;
 }
 
-function verifySignedToken(token, expectedPrefix = 'csrf') {
-  if (typeof token !== 'string') return false;
-  const parts = token.split('.');
-  if (parts.length !== 4) return false;
-  const [prefix, ts, nonce, sig] = parts;
-  if (prefix !== expectedPrefix) return false;
-  const payload = `${prefix}.${ts}.${nonce}`;
-  const expected = crypto.createHmac('sha256', CSRF_SECRET).update(payload).digest('hex').slice(0, 32);
-  if (sig.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+function setCookie(req, res, name, value, maxAgeSec) {
+  const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAgeSec}`];
+  if (getBaseUrl(req).startsWith('https://')) parts.push('Secure');
+  const prev = res.getHeader('Set-Cookie');
+  const list = prev ? (Array.isArray(prev) ? prev : [prev]) : [];
+  list.push(parts.join('; '));
+  res.setHeader('Set-Cookie', list);
 }
 
-function applySecurityHeaders(res) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; script-src 'self'; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv https://*;"
-  );
-}
-
-function checkRateLimit(ip, maxRequests = 100) {
-  const now = Date.now();
-  const record = rateLimitMap.get(ip) || { count: 0, windowStart: now };
-  if (now - record.windowStart > 60_000) {
-    record.count = 1;
-    record.windowStart = now;
-  } else {
-    record.count += 1;
+function getIp(req) {
+  if (ENV.TRUST_PROXY && req.headers['x-forwarded-for']) {
+    return String(req.headers['x-forwarded-for']).split(',')[0].trim();
   }
-  rateLimitMap.set(ip, record);
-  return record.count <= maxRequests;
+  return req.socket?.remoteAddress || 'unknown';
 }
 
-function sanitizeString(str, maxLen = 250) {
-  if (typeof str !== 'string') return '';
-  return str.replace(/[<>'`]/g, '').trim().slice(0, maxLen);
+function sendJson(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(data));
 }
 
-function parseJsonBody(req) {
+function redirect(res, location) {
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
+  res.end();
+}
+
+function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
-      body += chunk.toString();
+      body += chunk;
       if (body.length > 32 * 1024) {
-        reject(new Error('Payload Too Large'));
+        reject(new Error('Payload muito grande'));
         req.destroy();
       }
     });
     req.on('end', () => {
       try {
         resolve(body ? JSON.parse(body) : {});
-      } catch (e) {
+      } catch {
         reject(new Error('JSON inválido'));
       }
     });
+    req.on('error', reject);
   });
 }
 
-function calculateServerSideOrder({ packageId, customMinutes, includeBump, paymentMethod }) {
-  const pkgs = packagesConfig.packages;
-  let baseMinutes = 0;
-  let basePriceBRL = 0;
-  let bonusMinutes = 0;
-  let packageName = '';
-
-  if (packageId && pkgs[packageId]) {
-    const pkg = pkgs[packageId];
-    baseMinutes = pkg.minutes;
-    basePriceBRL = pkg.priceBRL;
-    bonusMinutes = pkg.bonusMinutes;
-    packageName = pkg.name;
-  } else if (typeof customMinutes === 'number' && Number.isInteger(customMinutes)) {
-    const m = Math.max(10, Math.min(240, Math.round(customMinutes / 10) * 10));
-    baseMinutes = m;
-    const p10 = pkgs.trial_10m.priceBRL; // 3.80
-    const p60 = pkgs.hour_1h.priceBRL;   // 22.75
-    const p120 = pkgs.combo_2h.priceBRL; // 44.90 (+10m grátis)
-    const p240 = pkgs.pass_4h.priceBRL;  // 86.90 (+25m grátis)
-
-    if (m === 10) {
-      basePriceBRL = p10;
-      bonusMinutes = 0;
-    } else if (m <= 60) {
-      basePriceBRL = p10 + ((m - 10) / 50) * (p60 - p10);
-      bonusMinutes = 0;
-    } else if (m < 120) {
-      basePriceBRL = p60 + ((m - 60) / 60) * (p120 - p60);
-      bonusMinutes = 0;
-    } else if (m === 120) {
-      basePriceBRL = p120;
-      bonusMinutes = 10;
-    } else if (m < 240) {
-      basePriceBRL = p120 + ((m - 120) / 120) * (p240 - p120);
-      bonusMinutes = 10;
-    } else {
-      basePriceBRL = p240;
-      bonusMinutes = 25;
+function makeLimiter(windowMs, max) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of hits) if (now - v.start > windowMs) hits.delete(k);
+  }, windowMs).unref();
+  return (key) => {
+    const now = Date.now();
+    const rec = hits.get(key);
+    if (!rec || now - rec.start > windowMs) {
+      hits.set(key, { start: now, count: 1 });
+      return true;
     }
+    rec.count += 1;
+    return rec.count <= max;
+  };
+}
 
-    basePriceBRL = Math.round(basePriceBRL * 100) / 100;
-    packageName = `Sessão Personalizada (${m} min)`;
-  } else {
-    throw new Error('Selecione um pacote válido.');
+const globalLimiter = makeLimiter(60_000, 150);
+const adminLoginLimiter = makeLimiter(15 * 60_000, 8);
+const checkoutLimiter = makeLimiter(60_000, 10);
+
+function getSessionUser(req) {
+  const data = unsign(parseCookies(req).vp_session, 'sess');
+  return data ? data.u : null;
+}
+
+function issueCsrf() {
+  return sign({ t: 'csrf', n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 2 * 60 * 60 * 1000 });
+}
+
+function isAdmin(req) {
+  return !!unsign(req.headers['x-admin-token'], 'admin');
+}
+
+// ---------------------------------------------------------------------------
+// PIX copia e cola (BR Code / EMV) com CRC16-CCITT válido
+// ---------------------------------------------------------------------------
+function emv(id, value) {
+  return `${id}${String(value.length).padStart(2, '0')}${value}`;
+}
+
+function crc16(payload) {
+  let crc = 0xffff;
+  for (const byte of Buffer.from(payload, 'utf8')) {
+    crc ^= byte << 8;
+    for (let i = 0; i < 8; i++) {
+      crc = crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1;
+      crc &= 0xffff;
+    }
   }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
 
-  const bumpPrice = includeBump ? packagesConfig.bumpPriceBRL : 0;
-  const bumpMinutes = includeBump ? 30 : 0;
-  const subtotalBRL = Math.round((basePriceBRL + bumpPrice) * 100) / 100;
-  const isCrypto = ['usdt', 'btc', 'sol'].includes(paymentMethod);
-  const discountBRL = isCrypto ? Math.round(subtotalBRL * packagesConfig.cryptoDiscountRate * 100) / 100 : 0;
-  const finalPriceBRL = Math.round((subtotalBRL - discountBRL) * 100) / 100;
-  const totalMinutes = baseMinutes + bonusMinutes + bumpMinutes;
-  const finalUSDT = (finalPriceBRL / 5.0).toFixed(2);
+function asciiUpper(str, max) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9 ]/g, '')
+    .toUpperCase()
+    .trim()
+    .slice(0, max);
+}
 
+function buildPixPayload(amount, txid) {
+  const merchant = emv('00', 'br.gov.bcb.pix') + emv('01', ps5Config.pixKey.slice(0, 77));
+  const base =
+    emv('00', '01') +
+    emv('26', merchant) +
+    emv('52', '0000') +
+    emv('53', '986') +
+    emv('54', amount.toFixed(2)) +
+    emv('58', 'BR') +
+    emv('59', asciiUpper(ps5Config.pixName, 25) || 'VICEPLAY') +
+    emv('60', asciiUpper(ps5Config.pixCity, 15) || 'SAO PAULO') +
+    emv('62', emv('05', txid.replace(/[^A-Za-z0-9]/g, '').slice(0, 25) || '***')) +
+    '6304';
+  return base + crc16(base);
+}
+
+// ---------------------------------------------------------------------------
+// Fila
+// ---------------------------------------------------------------------------
+function startSession(order) {
+  order.status = 'active';
+  ps5Config.activePlayer = {
+    orderId: order.orderId,
+    uid: order.uid,
+    name: order.userName,
+    totalMinutes: order.totalMinutes,
+    remainingSeconds: order.totalMinutes * 60,
+    startedAt: new Date().toISOString()
+  };
+  ps5Config.consoleStatus = 'busy';
+}
+
+function enqueueOrActivate(order) {
+  if (!order || !['pending'].includes(order.status)) return;
+  order.paidAt = new Date().toISOString();
+  if (!ps5Config.activePlayer && ps5Config.consoleStatus !== 'maintenance') {
+    startSession(order);
+  } else {
+    order.status = 'queued';
+    ps5Config.queue.push({
+      orderId: order.orderId,
+      uid: order.uid,
+      name: order.userName,
+      totalMinutes: order.totalMinutes,
+      joinedAt: new Date().toISOString()
+    });
+  }
+}
+
+function finishActive() {
+  if (ps5Config.activePlayer) {
+    const done = orders.get(ps5Config.activePlayer.orderId);
+    if (done) done.status = 'completed';
+  }
+  ps5Config.activePlayer = null;
+  advanceQueue();
+}
+
+function advanceQueue() {
+  if (ps5Config.activePlayer || ps5Config.consoleStatus === 'maintenance') return;
+  const next = ps5Config.queue.shift();
+  const order = next && orders.get(next.orderId);
+  if (order) startSession(order);
+  else if (ps5Config.consoleStatus === 'busy') ps5Config.consoleStatus = 'online';
+}
+
+function queueSummary(publicView) {
+  const activeSeconds = ps5Config.activePlayer ? ps5Config.activePlayer.remainingSeconds : 0;
+  let cumulative = activeSeconds;
+  const items = ps5Config.queue.map((q, idx) => {
+    const wait = Math.ceil(cumulative / 60);
+    cumulative += q.totalMinutes * 60;
+    return {
+      position: idx + 1,
+      orderId: publicView ? undefined : q.orderId,
+      name: publicView ? maskName(q.name) : q.name,
+      totalMinutes: q.totalMinutes,
+      estimatedWaitMinutes: wait
+    };
+  });
   return {
-    packageName,
-    baseMinutes,
-    bonusMinutes,
+    peopleAheadCount: (ps5Config.activePlayer ? 1 : 0) + ps5Config.queue.length,
+    queueOnlyCount: ps5Config.queue.length,
+    estimatedWaitMinutesForNewPlayer: Math.ceil(cumulative / 60),
+    items
+  };
+}
+
+setInterval(() => {
+  // Cronômetro da sessão ativa
+  if (ps5Config.activePlayer) {
+    ps5Config.activePlayer.remainingSeconds -= 1;
+    if (ps5Config.activePlayer.remainingSeconds <= 0) finishActive();
+  } else {
+    advanceQueue();
+  }
+}, 1000).unref();
+
+setInterval(() => {
+  const now = Date.now();
+  // Pedidos não pagos expiram em 30 min
+  for (const o of orders.values()) {
+    if (o.status === 'pending' && now - Date.parse(o.createdAt) > 30 * 60_000) o.status = 'expired';
+  }
+  // Mantém no máximo 300 pedidos
+  if (orders.size > 300) {
+    const removable = [...orders.values()].filter((o) => !['active', 'queued'].includes(o.status));
+    removable.slice(0, orders.size - 300).forEach((o) => orders.delete(o.orderId));
+  }
+  // Espectadores ativos nos últimos 30s
+  for (const [id, ts] of viewers) if (now - ts > 30_000) viewers.delete(id);
+}, 15_000).unref();
+
+// ---------------------------------------------------------------------------
+// Pedidos
+// ---------------------------------------------------------------------------
+function calculateOrder(packageId, includeBump, paymentMethod) {
+  const pkg = packagesConfig.packages[packageId];
+  if (!pkg) throw new Error('Selecione um pacote válido.');
+  const bumpPrice = includeBump ? packagesConfig.bumpPriceBRL : 0;
+  const bumpMinutes = includeBump ? packagesConfig.bumpMinutes : 0;
+  const subtotal = Math.round((pkg.priceBRL + bumpPrice) * 100) / 100;
+  const isCrypto = ['usdt', 'btc', 'sol'].includes(paymentMethod);
+  const discount = isCrypto ? Math.round(subtotal * packagesConfig.cryptoDiscountRate * 100) / 100 : 0;
+  const finalPriceBRL = Math.round((subtotal - discount) * 100) / 100;
+  return {
+    packageId: pkg.id,
+    packageName: pkg.name,
+    baseMinutes: pkg.minutes,
+    bonusMinutes: pkg.bonusMinutes,
     bumpMinutes,
-    totalMinutes,
-    subtotalBRL,
-    discountBRL,
+    totalMinutes: pkg.minutes + pkg.bonusMinutes + bumpMinutes,
+    subtotalBRL: subtotal,
+    discountBRL: discount,
     finalPriceBRL,
-    finalUSDT,
+    finalUSDT: (finalPriceBRL / packagesConfig.usdtRateBRL).toFixed(2),
     paymentMethod: isCrypto ? paymentMethod : 'pix',
     isCrypto
   };
 }
 
-async function requestHandler(req, res) {
-  applySecurityHeaders(res);
-  const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+function publicOrder(o) {
+  const queueIdx = ps5Config.queue.findIndex((q) => q.orderId === o.orderId);
+  const summary = queueSummary(true);
+  const isActive = o.status === 'active' && ps5Config.activePlayer?.orderId === o.orderId;
+  return {
+    orderId: o.orderId,
+    status: o.status,
+    packageName: o.packageName,
+    totalMinutes: o.totalMinutes,
+    finalPriceBRL: o.finalPriceBRL,
+    finalUSDT: o.finalUSDT,
+    paymentMethod: o.paymentMethod,
+    isCrypto: o.isCrypto,
+    paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
+    queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
+    estimatedWaitMinutes: queueIdx >= 0 ? summary.items[queueIdx].estimatedWaitMinutes : null,
+    remainingSeconds: isActive ? ps5Config.activePlayer.remainingSeconds : null,
+    // PIN e link só são revelados quando é a vez do jogador
+    accessPin: isActive ? ps5Config.remotePlayPin : null,
+    parsecInviteUrl: isActive ? ps5Config.parsecInviteUrl : null
+  };
+}
 
-  if (!checkRateLimit(clientIp)) {
-    res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ error: 'Muitas requisições. Aguarde 1 minuto.' }));
-  }
-
-  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-
-  // 1. Configuração Pública + Estado da Live Screen + Fila em Tempo Real
-  if (req.method === 'GET' && parsedUrl.pathname === '/api/config') {
-    const token = generateSignedToken('csrf');
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(
-      JSON.stringify({
-        csrfToken: token,
-        packages: packagesConfig.packages,
-        bumpPriceBRL: packagesConfig.bumpPriceBRL,
-        cryptoDiscountRate: packagesConfig.cryptoDiscountRate,
-        ps5Public: {
-          consoleName: ps5Config.consoleName,
-          consoleStatus: ps5Config.consoleStatus,
-          streamMode: ps5Config.streamMode,
-          streamSourceUrl: ps5Config.streamSourceUrl,
-          streamTitle: ps5Config.streamTitle,
-          viewersCount: ps5Config.viewersCount,
-          activePlayer: ps5Config.activePlayer,
-          queueSummary: getQueueWaitSummary()
-        }
-      })
-    );
-  }
-
-  // 2. Criar Pedido no Checkout
-  if (req.method === 'POST' && parsedUrl.pathname === '/api/checkout') {
-    try {
-      const csrfHeader = req.headers['x-csrf-token'];
-      if (!verifySignedToken(csrfHeader, 'csrf')) {
-        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error: 'Sessão atualizada. Recarregue a página.' }));
-      }
-
-      const body = await parseJsonBody(req);
-      const userProvider = sanitizeString(body.provider || '', 20);
-      const userHandle = sanitizeString(body.userHandle || '', 60);
-
-      if (!userProvider || !userHandle) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error: 'Conecte seu Discord ou Google para continuar.' }));
-      }
-
-      const calc = calculateServerSideOrder({
-        packageId: sanitizeString(body.packageId || '', 30),
-        customMinutes: typeof body.customMinutes === 'number' ? body.customMinutes : null,
-        includeBump: Boolean(body.includeBump),
-        paymentMethod: sanitizeString(body.paymentMethod || 'pix', 15)
+// ---------------------------------------------------------------------------
+// OAuth2 (Discord / Google)
+// ---------------------------------------------------------------------------
+const OAUTH = {
+  discord: {
+    label: 'Discord',
+    clientId: () => ENV.DISCORD_CLIENT_ID,
+    clientSecret: () => ENV.DISCORD_CLIENT_SECRET,
+    authUrl: 'https://discord.com/oauth2/authorize',
+    tokenUrl: 'https://discord.com/api/oauth2/token',
+    scope: 'identify',
+    extra: {},
+    async profile(accessToken) {
+      const r = await fetch('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000)
       });
-
-      const orderId = 'VP-' + crypto.randomBytes(3).toString('hex').toUpperCase();
-      const accessPin = ps5Config.remotePlayPin || crypto.randomInt(100000, 999999).toString();
-      const pixPayload = `00020126580014BR.GOV.BCB.PIX0136${ps5Config.pixKey}520400005303986540${calc.finalPriceBRL.toFixed(2)}5802BR5914VICEPLAY.CLOUD6009SAO PAULO62070503***6304ABCD`;
-      const cryptoWallet =
-        calc.paymentMethod === 'btc'
-          ? ps5Config.walletBtc
-          : calc.paymentMethod === 'sol'
-          ? ps5Config.walletSol
-          : ps5Config.walletUsdt;
-
-      const orderRecord = {
-        orderId,
-        createdAt: new Date().toISOString(),
-        userProvider,
-        userHandle,
-        status: 'pending',
-        ...calc,
-        pixPayload,
-        cryptoWallet,
-        accessPin,
-        parsecInviteUrl: ps5Config.parsecInviteUrl
+      if (!r.ok) throw new Error(`discord profile ${r.status}`);
+      const u = await r.json();
+      return {
+        id: String(u.id),
+        name: u.global_name || u.username,
+        handle: u.username,
+        avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=64` : null
       };
-
-      ordersList.unshift(orderRecord);
-      if (ordersList.length > 50) ordersList.pop();
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ ok: true, order: orderRecord }));
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: err.message || 'Erro no checkout.' }));
+    }
+  },
+  google: {
+    label: 'Google',
+    clientId: () => ENV.GOOGLE_CLIENT_ID,
+    clientSecret: () => ENV.GOOGLE_CLIENT_SECRET,
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope: 'openid profile email',
+    extra: { prompt: 'select_account' },
+    async profile(accessToken) {
+      const r = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!r.ok) throw new Error(`google profile ${r.status}`);
+      const u = await r.json();
+      return { id: String(u.sub), name: u.name || u.email, handle: u.email, avatar: u.picture || null };
     }
   }
+};
 
-  // 3. Confirmar Pagamento -> Se PS5 livre, entra na hora; se ocupado, entra na Fila FIFO!
-  if (req.method === 'POST' && parsedUrl.pathname === '/api/activate-session') {
-    try {
-      const body = await parseJsonBody(req);
-      const orderId = sanitizeString(body.orderId || '', 20);
-      const order = ordersList.find((o) => o.orderId === orderId);
+const providerEnabled = (p) => !!(OAUTH[p] && OAUTH[p].clientId() && OAUTH[p].clientSecret());
 
-      if (!order) {
-        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error: 'Pedido não encontrado.' }));
-      }
+function oauthStart(req, res, provider) {
+  if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
+  const cfg = OAUTH[provider];
+  const state = crypto.randomBytes(16).toString('hex');
+  setCookie(req, res, 'vp_oauth', sign({ t: 'oauth', s: state, p: provider, exp: Date.now() + 10 * 60_000 }), 600);
+  const params = new URLSearchParams({
+    client_id: cfg.clientId(),
+    redirect_uri: `${getBaseUrl(req)}/auth/${provider}/callback`,
+    response_type: 'code',
+    scope: cfg.scope,
+    state,
+    ...cfg.extra
+  });
+  redirect(res, `${cfg.authUrl}?${params}`);
+}
 
-      // Evitar duplicidade
-      const alreadyActive = ps5Config.activePlayer && ps5Config.activePlayer.orderId === orderId;
-      const alreadyQueued = ps5Config.queue.find((q) => q.orderId === orderId);
+async function oauthCallback(req, res, provider, query) {
+  const cfg = OAUTH[provider];
+  const saved = unsign(parseCookies(req).vp_oauth, 'oauth');
+  setCookie(req, res, 'vp_oauth', '', 0);
 
-      if (!alreadyActive && !alreadyQueued) {
-        if (!ps5Config.activePlayer && ps5Config.consoleStatus !== 'maintenance') {
-          order.status = 'active';
-          ps5Config.activePlayer = {
-            orderId: order.orderId,
-            userHandle: order.userHandle,
-            provider: order.userProvider,
-            totalMinutes: order.totalMinutes,
-            remainingSeconds: order.totalMinutes * 60,
-            startedAt: new Date().toISOString()
-          };
-          ps5Config.consoleStatus = 'busy';
-        } else {
-          order.status = 'queued';
-          ps5Config.queue.push({
-            orderId: order.orderId,
-            userHandle: order.userHandle,
-            provider: order.userProvider,
-            totalMinutes: order.totalMinutes,
-            joinedAt: new Date().toISOString()
-          });
-        }
-      }
-
-      const queueSummary = getQueueWaitSummary();
-      const myQueueEntry = queueSummary.items.find((i) => i.orderId === orderId) || null;
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(
-        JSON.stringify({
-          ok: true,
-          mode: myQueueEntry ? 'queued' : 'active',
-          queueEntry: myQueueEntry,
-          activePlayer: ps5Config.activePlayer,
-          queueSummary
-        })
-      );
-    } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Falha ao ativar sessão.' }));
-    }
+  if (query.get('error')) return redirect(res, '/?auth_error=cancelled');
+  if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
+  if (!saved || saved.p !== provider || !query.get('state') || !safeEqual(query.get('state'), saved.s)) {
+    return redirect(res, '/?auth_error=state');
   }
 
-  // 4. API de Login do /admin (Usuário: 5288 | Senha: 5288)
-  if (req.method === 'POST' && parsedUrl.pathname === '/api/admin/login') {
-    try {
-      const body = await parseJsonBody(req);
-      const user = String(body.username || '').trim();
-      const pass = String(body.password || '').trim();
+  try {
+    const tokenRes = await fetch(cfg.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: new URLSearchParams({
+        client_id: cfg.clientId(),
+        client_secret: cfg.clientSecret(),
+        grant_type: 'authorization_code',
+        code: query.get('code') || '',
+        redirect_uri: `${getBaseUrl(req)}/auth/${provider}/callback`
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!tokenRes.ok) throw new Error(`${provider} token ${tokenRes.status}: ${await tokenRes.text()}`);
+    const token = await tokenRes.json();
+    const profile = await cfg.profile(token.access_token);
 
-      if (user === ADMIN_USER && pass === ADMIN_PASS) {
-        const adminToken = generateSignedToken('admin');
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ ok: true, adminToken }));
-      }
-      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Usuário ou senha incorretos.' }));
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Requisição inválida.' }));
-    }
+    const user = {
+      uid: `${provider}:${profile.id}`,
+      provider,
+      name: clip(profile.name, 60) || 'Jogador',
+      handle: clip(profile.handle, 80),
+      avatar: profile.avatar && /^https:\/\//.test(profile.avatar) ? profile.avatar : null
+    };
+    setCookie(req, res, 'vp_session', sign({ t: 'sess', u: user, exp: Date.now() + SESSION_TTL_MS }), SESSION_TTL_MS / 1000);
+    redirect(res, '/?login=ok');
+  } catch (err) {
+    console.error('[viceplay] Falha no OAuth:', err.message);
+    redirect(res, '/?auth_error=failed');
   }
+}
 
-  // 5. API de Leitura do Painel /admin
-  if (req.method === 'GET' && parsedUrl.pathname === '/api/admin/state') {
-    const authHeader = req.headers['x-admin-token'];
-    if (!verifySignedToken(authHeader, 'admin')) {
-      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Não autorizado.' }));
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(
-      JSON.stringify({
-        ok: true,
-        ps5Config,
-        queueSummary: getQueueWaitSummary(),
-        packagesConfig,
-        ordersList
-      })
-    );
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+function securityHeaders(req, res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "style-src 'self' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https://cdn.discordapp.com https://*.googleusercontent.com",
+      "script-src 'self'",
+      "connect-src 'self'",
+      'frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv https://vdo.ninja',
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join('; ')
+  );
+  if (getBaseUrl(req).startsWith('https://')) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
+}
 
-  // 6. API de Salvar Configurações do PS5, Fila e Preços no /admin
-  if (req.method === 'POST' && parsedUrl.pathname === '/api/admin/save') {
-    const authHeader = req.headers['x-admin-token'];
-    if (!verifySignedToken(authHeader, 'admin')) {
-      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Não autorizado.' }));
-    }
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon'
+};
 
-    try {
-      const body = await parseJsonBody(req);
-
-      if (body.ps5Config) {
-        const c = body.ps5Config;
-        if (c.consoleName) ps5Config.consoleName = sanitizeString(c.consoleName, 80);
-        if (['online', 'busy', 'maintenance'].includes(c.consoleStatus)) ps5Config.consoleStatus = c.consoleStatus;
-        if (c.ps5LocalIp) ps5Config.ps5LocalIp = sanitizeString(c.ps5LocalIp, 45);
-        if (c.remotePlayPin) ps5Config.remotePlayPin = sanitizeString(c.remotePlayPin, 20);
-        if (c.connectionMode) ps5Config.connectionMode = sanitizeString(c.connectionMode, 30);
-        if (c.parsecInviteUrl) ps5Config.parsecInviteUrl = sanitizeString(c.parsecInviteUrl, 200);
-        if (['youtube', 'twitch', 'hls_webrtc'].includes(c.streamMode)) ps5Config.streamMode = c.streamMode;
-        if (typeof c.streamSourceUrl === 'string') ps5Config.streamSourceUrl = sanitizeString(c.streamSourceUrl, 300);
-        if (c.streamTitle) ps5Config.streamTitle = sanitizeString(c.streamTitle, 100);
-        if (c.pixKey) ps5Config.pixKey = sanitizeString(c.pixKey, 120);
-        if (c.walletUsdt) ps5Config.walletUsdt = sanitizeString(c.walletUsdt, 120);
-        if (c.walletBtc) ps5Config.walletBtc = sanitizeString(c.walletBtc, 120);
-        if (c.walletSol) ps5Config.walletSol = sanitizeString(c.walletSol, 120);
-      }
-
-      if (body.prices) {
-        const p = body.prices;
-        if (typeof p.trial_10m === 'number' && p.trial_10m > 0) packagesConfig.packages.trial_10m.priceBRL = p.trial_10m;
-        if (typeof p.hour_1h === 'number' && p.hour_1h > 0) packagesConfig.packages.hour_1h.priceBRL = p.hour_1h;
-        if (typeof p.combo_2h === 'number' && p.combo_2h > 0) packagesConfig.packages.combo_2h.priceBRL = p.combo_2h;
-        if (typeof p.pass_4h === 'number' && p.pass_4h > 0) packagesConfig.packages.pass_4h.priceBRL = p.pass_4h;
-        if (typeof p.bumpPriceBRL === 'number' && p.bumpPriceBRL >= 0) packagesConfig.bumpPriceBRL = p.bumpPriceBRL;
-      }
-
-      if (body.action === 'kick_player') {
-        ps5Config.activePlayer = null;
-        advanceQueueIfNeeded();
-      }
-
-      if (body.action === 'clear_queue') {
-        ps5Config.queue = [];
-      }
-
-      if (body.action === 'add_15m' && ps5Config.activePlayer) {
-        ps5Config.activePlayer.remainingSeconds += 15 * 60;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(
-        JSON.stringify({
-          ok: true,
-          ps5Config,
-          queueSummary: getQueueWaitSummary(),
-          packagesConfig
-        })
-      );
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ error: 'Erro ao salvar configurações.' }));
-    }
+function serveStatic(res, pathname) {
+  let rel = pathname === '/' ? '/index.html' : pathname;
+  if (rel === '/admin' || rel === '/admin/') rel = '/admin.html';
+  let decoded;
+  try {
+    decoded = decodeURIComponent(rel);
+  } catch {
+    res.writeHead(400);
+    return res.end('Bad request');
   }
-
-  // Roteamento de páginas estáticas (/ e /admin)
-  let filePath = parsedUrl.pathname;
-  if (filePath === '/') filePath = '/index.html';
-  else if (filePath === '/admin' || filePath === '/admin/') filePath = '/admin.html';
-
-  const safeSuffix = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
-  const absPath = path.join(__dirname, 'public', safeSuffix);
-
-  if (!absPath.startsWith(path.join(__dirname, 'public'))) {
+  const abs = path.normalize(path.join(PUBLIC_DIR, decoded));
+  if (!abs.startsWith(PUBLIC_DIR + path.sep)) {
     res.writeHead(403);
     return res.end('Forbidden');
   }
-
-  const ext = path.extname(absPath).toLowerCase();
-  const mimeTypes = {
-    '.html': 'text/html; charset=utf-8',
-    '.css': 'text/css; charset=utf-8',
-    '.js': 'application/javascript; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
-    '.svg': 'image/svg+xml'
-  };
-
-  fs.readFile(absPath, (err, content) => {
+  fs.readFile(abs, (err, content) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end('404 - Página não encontrada');
     }
-    res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': 'no-cache'
+    });
     res.end(content);
   });
 }
 
+async function handler(req, res) {
+  securityHeaders(req, res);
+  const ip = getIp(req);
+  if (!globalLimiter(ip)) return sendJson(res, 429, { error: 'Muitas requisições. Aguarde 1 minuto.' });
+
+  const url = new URL(req.url, 'http://local');
+  const p = url.pathname;
+  const user = getSessionUser(req);
+
+  try {
+    // ---------------- Auth ----------------
+    const authMatch = p.match(/^\/auth\/(discord|google)(\/callback)?$/);
+    if (req.method === 'GET' && authMatch) {
+      return authMatch[2] ? oauthCallback(req, res, authMatch[1], url.searchParams) : oauthStart(req, res, authMatch[1]);
+    }
+
+    if (req.method === 'POST' && p === '/auth/logout') {
+      setCookie(req, res, 'vp_session', '', 0);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && p === '/api/me') {
+      return sendJson(res, 200, {
+        user: user ? { name: user.name, handle: user.handle, avatar: user.avatar, provider: user.provider } : null,
+        providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
+        demoMode: ENV.DEMO_MODE
+      });
+    }
+
+    // ---------------- Público ----------------
+    if (req.method === 'GET' && p === '/api/config') {
+      const cid = url.searchParams.get('cid');
+      if (cid && /^[a-z0-9]{8,32}$/.test(cid)) viewers.set(cid, Date.now());
+      const ap = ps5Config.activePlayer;
+      return sendJson(res, 200, {
+        csrfToken: issueCsrf(),
+        packages: packagesConfig.packages,
+        bumpPriceBRL: packagesConfig.bumpPriceBRL,
+        cryptoDiscountRate: packagesConfig.cryptoDiscountRate,
+        usdtRateBRL: packagesConfig.usdtRateBRL,
+        ps5Public: {
+          consoleStatus: ps5Config.consoleStatus,
+          streamSourceUrl: ps5Config.streamSourceUrl,
+          streamTitle: ps5Config.streamTitle,
+          viewersCount: Math.max(1, viewers.size),
+          activePlayer: ap ? { name: maskName(ap.name), remainingSeconds: ap.remainingSeconds } : null,
+          queueSummary: queueSummary(true)
+        }
+      });
+    }
+
+    if (req.method === 'POST' && p === '/api/checkout') {
+      if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
+      if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
+      if (!checkoutLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
+
+      const pendingCount = [...orders.values()].filter((o) => o.uid === user.uid && o.status === 'pending').length;
+      if (pendingCount >= 3) return sendJson(res, 429, { error: 'Você já tem pedidos aguardando pagamento.' });
+
+      const body = await readJson(req);
+      const calc = calculateOrder(String(body.packageId || ''), body.includeBump === true, String(body.paymentMethod || 'pix'));
+      const orderId = `VP${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const order = {
+        orderId,
+        createdAt: new Date().toISOString(),
+        uid: user.uid,
+        userName: user.name,
+        userHandle: user.handle,
+        userProvider: user.provider,
+        status: 'pending',
+        ...calc,
+        pixPayload: buildPixPayload(calc.finalPriceBRL, orderId),
+        cryptoWallet: calc.paymentMethod === 'btc' ? ps5Config.walletBtc : calc.paymentMethod === 'sol' ? ps5Config.walletSol : ps5Config.walletUsdt
+      };
+      orders.set(orderId, order);
+      return sendJson(res, 200, { ok: true, order: publicOrder(order) });
+    }
+
+    if (req.method === 'GET' && p === '/api/order') {
+      if (!user) return sendJson(res, 401, { error: 'login' });
+      const o = orders.get(String(url.searchParams.get('id') || ''));
+      if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+      return sendJson(res, 200, { ok: true, order: publicOrder(o) });
+    }
+
+    // Simulação de pagamento: só em modo de teste e só para o dono do pedido
+    if (req.method === 'POST' && p === '/api/demo/confirm') {
+      if (!ENV.DEMO_MODE) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
+      if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf' });
+      if (!user) return sendJson(res, 401, { error: 'login' });
+      const body = await readJson(req);
+      const o = orders.get(String(body.orderId || ''));
+      if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+      enqueueOrActivate(o);
+      return sendJson(res, 200, { ok: true, order: publicOrder(o) });
+    }
+
+    // ---------------- Admin ----------------
+    if (req.method === 'POST' && p === '/api/admin/login') {
+      if (!adminLoginLimiter(ip)) return sendJson(res, 429, { error: 'Muitas tentativas. Aguarde 15 minutos.' });
+      const body = await readJson(req);
+      const okUser = safeEqual(String(body.username || ''), ENV.ADMIN_USER);
+      const okPass = safeEqual(String(body.password || ''), ENV.ADMIN_PASS);
+      if (!okUser || !okPass) return sendJson(res, 401, { error: 'Usuário ou senha incorretos.' });
+      return sendJson(res, 200, { ok: true, adminToken: sign({ t: 'admin', exp: Date.now() + 12 * 60 * 60 * 1000 }) });
+    }
+
+    if (p.startsWith('/api/admin/')) {
+      if (!isAdmin(req)) return sendJson(res, 401, { error: 'Não autorizado.' });
+
+      if (req.method === 'GET' && p === '/api/admin/state') {
+        return sendJson(res, 200, {
+          ok: true,
+          ps5Config,
+          packagesConfig,
+          queueSummary: queueSummary(false),
+          orders: [...orders.values()].reverse().slice(0, 60),
+          providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
+          demoMode: ENV.DEMO_MODE
+        });
+      }
+
+      if (req.method === 'POST' && p === '/api/admin/save') {
+        const body = await readJson(req);
+        const c = body.ps5Config || {};
+        const str = (k, max) => {
+          if (typeof c[k] === 'string' && c[k].trim()) ps5Config[k] = clip(c[k], max);
+        };
+        if (['online', 'busy', 'maintenance'].includes(c.consoleStatus)) ps5Config.consoleStatus = c.consoleStatus;
+        if (['youtube', 'twitch', 'hls_webrtc'].includes(c.streamMode)) ps5Config.streamMode = c.streamMode;
+        if (typeof c.streamSourceUrl === 'string' && /^https:\/\//.test(c.streamSourceUrl.trim())) {
+          ps5Config.streamSourceUrl = clip(c.streamSourceUrl, 400);
+        }
+        str('streamTitle', 100);
+        str('ps5LocalIp', 45);
+        str('remotePlayPin', 20);
+        str('connectionMode', 30);
+        if (typeof c.parsecInviteUrl === 'string' && /^https:\/\//.test(c.parsecInviteUrl.trim())) {
+          ps5Config.parsecInviteUrl = clip(c.parsecInviteUrl, 300);
+        }
+        str('pixKey', 77);
+        str('pixName', 25);
+        str('pixCity', 15);
+        str('walletUsdt', 120);
+        str('walletBtc', 120);
+        str('walletSol', 120);
+
+        const prices = body.prices || {};
+        for (const id of Object.keys(packagesConfig.packages)) {
+          const v = Number(prices[id]);
+          if (Number.isFinite(v) && v > 0 && v < 10000) packagesConfig.packages[id].priceBRL = Math.round(v * 100) / 100;
+        }
+        const bump = Number(prices.bumpPriceBRL);
+        if (Number.isFinite(bump) && bump >= 0 && bump < 10000) packagesConfig.bumpPriceBRL = Math.round(bump * 100) / 100;
+
+        if (ps5Config.consoleStatus === 'online' && ps5Config.activePlayer) ps5Config.consoleStatus = 'busy';
+        if (ps5Config.consoleStatus === 'busy' && !ps5Config.activePlayer) ps5Config.consoleStatus = 'online';
+        advanceQueue();
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (req.method === 'POST' && p === '/api/admin/action') {
+        const body = await readJson(req);
+        const o = body.orderId ? orders.get(String(body.orderId)) : null;
+        switch (body.action) {
+          case 'confirm_order':
+            if (!o) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+            enqueueOrActivate(o);
+            break;
+          case 'cancel_order':
+            if (!o) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+            if (o.status === 'active') finishActive();
+            ps5Config.queue = ps5Config.queue.filter((q) => q.orderId !== o.orderId);
+            o.status = 'cancelled';
+            break;
+          case 'kick_player':
+            finishActive();
+            break;
+          case 'add_15m':
+            if (ps5Config.activePlayer) ps5Config.activePlayer.remainingSeconds += 15 * 60;
+            break;
+          case 'clear_queue':
+            ps5Config.queue.forEach((q) => {
+              const qo = orders.get(q.orderId);
+              if (qo) qo.status = 'cancelled';
+            });
+            ps5Config.queue = [];
+            break;
+          default:
+            return sendJson(res, 400, { error: 'Ação inválida.' });
+        }
+        return sendJson(res, 200, { ok: true });
+      }
+
+      return sendJson(res, 404, { error: 'Rota não encontrada.' });
+    }
+
+    if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p);
+    return sendJson(res, 405, { error: 'Método não permitido.' });
+  } catch (err) {
+    console.error('[viceplay] Erro:', err.message);
+    return sendJson(res, 400, { error: err.message || 'Erro inesperado.' });
+  }
+}
+
 if (require.main === module) {
-  const server = http.createServer(requestHandler);
-  server.listen(PORT, () => {
-    console.log(`[viceplay.cloud] Servidor rodando em http://localhost:${PORT}`);
+  http.createServer(handler).listen(ENV.PORT, () => {
+    console.log(`[viceplay.cloud] Rodando em http://localhost:${ENV.PORT}`);
+    console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
+    console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
+    console.log(`  Modo de teste: ${ENV.DEMO_MODE ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
 }
 
-module.exports = requestHandler;
+module.exports = handler;

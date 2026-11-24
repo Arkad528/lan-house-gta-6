@@ -3,225 +3,221 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel Admin — viceplay.cloud (PS5 GTA VI)</title>
+  <title>Admin — viceplay.cloud</title>
+  <meta name="theme-color" content="#0a0612" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="container topbar-inner">
-      <div class="brand">
-        <span class="brand-dot"></span>
-        <span class="brand-name">viceplay<span class="brand-accent">.cloud</span></span>
-        <span class="badge-live">Painel Admin PS5</span>
-      </div>
-      <div class="auth-area">
-        <a href="/" class="btn-auth btn-google">← Voltar para a Lan House (Tela do Jogo)</a>
-        <button type="button" id="btn-admin-logout" class="btn-auth btn-discord hidden">Sair do Admin</button>
-      </div>
+  <header class="container site-header admin-header">
+    <a href="/" class="brand-mini">
+      <span class="dot"></span>
+      <span>viceplay.cloud <span class="pill">Admin</span></span>
+    </a>
+    <div class="stage-stats">
+      <a href="/" class="btn btn-secondary btn-sm">Ver site</a>
+      <button type="button" class="btn btn-danger btn-sm hidden" id="btn-admin-logout">Sair</button>
     </div>
   </header>
 
-  <main class="container main-content">
-    <!-- TELA DE LOGIN DO ADMIN (Usuário: 5288 | Senha: 5288) -->
-    <section id="admin-login-section" class="admin-login-wrapper">
-      <div class="modal-card admin-login-card">
-        <span class="eyebrow">ACESSO RESTRITO • OPERADOR PS5</span>
-        <h2>Login do Painel Admin</h2>
-        <p class="modal-desc">Digite suas credenciais de administrador para configurar o PS5, a transmissão ao vivo e os preços.</p>
-
-        <form id="admin-login-form">
-          <label class="form-label" for="admin-user-input">Usuário Admin</label>
-          <input
-            type="text"
-            id="admin-user-input"
-            class="form-input"
-            placeholder="Digite o usuário"
-            required
-            autocomplete="username"
-          />
-
-          <label class="form-label" for="admin-pass-input">Senha de Acesso</label>
-          <input
-            type="password"
-            id="admin-pass-input"
-            class="form-input"
-            placeholder="Digite a senha"
-            required
-            autocomplete="current-password"
-          />
-
-          <p id="admin-login-error" class="admin-error hidden">Usuário ou senha inválidos.</p>
-
-          <button type="submit" class="btn-checkout-submit">Acessar Painel do PS5</button>
+  <main class="container">
+    <!-- Login Admin -->
+    <section id="admin-login" class="admin-login">
+      <div class="modal-card modal-sm">
+        <div class="modal-head">
+          <div>
+            <h3>Painel do Operador</h3>
+            <p>Acesso restrito para configurar o PS5, fila e pagamentos.</p>
+          </div>
+        </div>
+        <form id="admin-login-form" class="stack">
+          <div class="field">
+            <label class="field-label" for="admin-user">Usuário</label>
+            <input type="text" id="admin-user" class="input" required autocomplete="username" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="admin-pass">Senha</label>
+            <input type="password" id="admin-pass" class="input" required autocomplete="current-password" />
+          </div>
+          <p id="admin-error" class="form-error hidden">Usuário ou senha incorretos.</p>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">Entrar no painel</button>
         </form>
       </div>
     </section>
 
-    <!-- DASHBOARD COMPLETO DO ADMIN (Visível após login 5288 / 5288) -->
-    <section id="admin-dashboard-section" class="admin-dashboard hidden">
-      <div class="compact-hero">
+    <!-- Dashboard -->
+    <section id="admin-dashboard" class="hidden">
+      <div class="admin-top">
         <div>
-          <span class="eyebrow">CENTRAL DE COMANDO • VICEPLAY.CLOUD</span>
-          <h1>Configuração do PS5, Tela Ao Vivo e Pagamentos</h1>
+          <span class="eyebrow">Central de Controle</span>
+          <h1>Configuração do PS5 & Fila</h1>
         </div>
-        <button type="button" id="btn-save-all" class="btn-checkout-submit btn-save-top">
-          💾 Salvar Todas as Configurações
-        </button>
+        <button type="button" class="btn btn-primary btn-lg" id="btn-save">Salvar alterações</button>
       </div>
 
-      <div id="admin-toast" class="admin-toast hidden">✓ Configurações salvas e aplicadas ao vivo no site!</div>
+      <div class="oauth-status" id="oauth-status"></div>
 
       <div class="admin-grid">
-        <!-- 1. CONTROLE DA TELA AO VIVO (O que todo mundo vê na página inicial) -->
-        <div class="calc-panel admin-card">
-          <span class="eyebrow">01 • TELA AO VIVO NA PÁGINA INICIAL</span>
-          <h3>Transmissão do Jogo (Para Todos Verem Rodando)</h3>
-          <p class="modal-desc">Configure o link da transmissão que aparece na TV principal da página inicial:</p>
+        <!-- 1. Tela Ao Vivo -->
+        <div class="card">
+          <h2>Transmissão ao vivo</h2>
+          <p class="card-sub">Link da tela que aparece na página inicial.</p>
 
-          <label class="form-label" for="cfg-stream-title">Título da Transmissão Ao Vivo</label>
-          <input type="text" id="cfg-stream-title" class="form-input" placeholder="Ex: AO VIVO: Sessão GTA VI • PS5 #01" />
+          <div class="field">
+            <label class="field-label" for="cfg-stream-title">Título da transmissão</label>
+            <input type="text" id="cfg-stream-title" class="input" />
+          </div>
 
-          <label class="form-label" for="cfg-stream-mode">Origem do Vídeo do PS5</label>
-          <select id="cfg-stream-mode" class="form-input">
-            <option value="youtube">YouTube Live / Embed (Recomendado p/ Zero Custo)</option>
-            <option value="twitch">Twitch Channel Player (Transmissão Direta do PS5)</option>
-            <option value="hls_webrtc">WebRTC / OBS Ninja (vdo.ninja) / Placa de Captura Local</option>
-          </select>
+          <div class="field">
+            <label class="field-label" for="cfg-stream-mode">Origem</label>
+            <select id="cfg-stream-mode" class="input">
+              <option value="youtube">YouTube Embed</option>
+              <option value="twitch">Twitch Embed</option>
+              <option value="hls_webrtc">VDO.Ninja / WebRTC</option>
+            </select>
+          </div>
 
-          <label class="form-label" for="cfg-stream-url">URL Embed da Tela do Jogo (YouTube Embed, Twitch, VDO.Ninja ou WebRTC)</label>
-          <input
-            type="text"
-            id="cfg-stream-url"
-            class="form-input"
-            placeholder="https://www.youtube.com/embed/..."
-          />
-          <p class="admin-help-tip">
-            💡 <strong>Dica Rápida:</strong> Você pode transmitir direto do PS5 para a Twitch/YouTube (botão <em>Create/Broadcast</em> do controle DualSense) ou usar <code>https://vdo.ninja/?view=SEU_ID</code> com o Chiaki-ng no PC para latência sub-segundo!
-          </p>
+          <div class="field">
+            <label class="field-label" for="cfg-stream-url">URL Embed (https://...)</label>
+            <input type="url" id="cfg-stream-url" class="input" placeholder="https://www.youtube.com/embed/..." />
+          </div>
         </div>
 
-        <!-- 2. CONEXÃO DO HARDWARE PS5 & SESSÃO ATUAL -->
-        <div class="calc-panel admin-card">
-          <span class="eyebrow">02 • HARDWARE PS5 & CONTROLE REMOTO</span>
-          <h3>Conexão do Console PS5 Físico</h3>
-          <p class="modal-desc">Defina o IP local do seu PS5, o código PIN do Remote Play e o link do Parsec/Chiaki:</p>
+        <!-- 2. Hardware PS5 & Sessão -->
+        <div class="card">
+          <h2>Console PS5 & Fila</h2>
+          <p class="card-sub">Dados entregues ao jogador somente quando chegar a vez dele.</p>
 
-          <div class="admin-two-cols">
-            <div>
-              <label class="form-label" for="cfg-console-status">Status do Console</label>
-              <select id="cfg-console-status" class="form-input">
-                <option value="online">🟢 Online (Livre p/ Jogar)</option>
-                <option value="busy">🟡 Ocupado (Jogador em Sessão)</option>
-                <option value="maintenance">🔴 Manutenção</option>
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="cfg-status">Status</label>
+              <select id="cfg-status" class="input">
+                <option value="online">Online (livre)</option>
+                <option value="busy">Ocupado</option>
+                <option value="maintenance">Manutenção</option>
               </select>
             </div>
-            <div>
-              <label class="form-label" for="cfg-ps5-ip">IP Local do PS5 (LAN)</label>
-              <input type="text" id="cfg-ps5-ip" class="form-input" placeholder="192.168.1.150" />
+            <div class="field">
+              <label class="field-label" for="cfg-ip">IP local do PS5</label>
+              <input type="text" id="cfg-ip" class="input" />
             </div>
           </div>
 
-          <div class="admin-two-cols">
-            <div>
-              <label class="form-label" for="cfg-remote-pin">PIN PS5 Remote Play (Entregue após Pagar)</label>
-              <input type="text" id="cfg-remote-pin" class="form-input" placeholder="Ex: 48291033" />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="cfg-pin">PIN PS Remote Play</label>
+              <input type="text" id="cfg-pin" class="input" />
             </div>
-            <div>
-              <label class="form-label" for="cfg-connection-mode">Modo de Entrega do Controle</label>
-              <select id="cfg-connection-mode" class="form-input">
-                <option value="parsec_chiaki">Parsec + Chiaki-ng (PC Ponte)</option>
-                <option value="webrtc_capture">Placa Captura HDMI + WebRTC</option>
-                <option value="ps_remote_direct">App PS Remote Play Direto</option>
+            <div class="field">
+              <label class="field-label" for="cfg-mode">Modo de conexão</label>
+              <select id="cfg-mode" class="input">
+                <option value="parsec_chiaki">Parsec + Chiaki-ng</option>
+                <option value="webrtc_capture">Placa HDMI + WebRTC</option>
+                <option value="ps_remote_direct">PS Remote Play direto</option>
               </select>
             </div>
           </div>
 
-          <label class="form-label" for="cfg-parsec-url">Link Direto da Sala Parsec / WebRTC (Liberado junto com o PIN)</label>
-          <input type="text" id="cfg-parsec-url" class="form-input" placeholder="https://parsec.gg/g/..." />
+          <div class="field">
+            <label class="field-label" for="cfg-parsec">Link Parsec / Sala WebRTC (https://...)</label>
+            <input type="url" id="cfg-parsec" class="input" />
+          </div>
 
-          <!-- Monitor de Quem Está Jogando Agora e Fila -->
-          <div class="active-session-box">
-            <div class="session-box-header">
-              <strong>🎮 Jogador Atual no Controle do PS5:</strong>
-              <span id="admin-active-player-label" class="text-green">Nenhum (Console Livre)</span>
+          <div class="session-panel">
+            <div class="session-row">
+              <span>Jogando agora:</span>
+              <strong id="adm-active" class="good">Nenhum (livre)</strong>
             </div>
-            <div class="session-box-header">
-              <strong>👥 Pessoas Esperando na Fila:</strong>
-              <span id="admin-queue-count-label">0 na fila</span>
+            <div class="session-row">
+              <span>Fila de espera:</span>
+              <strong id="adm-queue">0</strong>
             </div>
-            <div class="admin-session-actions">
-              <button type="button" id="btn-admin-add15" class="btn-auth btn-google">+15 Minutos Cortesia</button>
-              <button type="button" id="btn-admin-kick" class="btn-auth btn-kick">⏭️ Encerrar Atual / Chamar Próximo da Fila</button>
-              <button type="button" id="btn-admin-clear-queue" class="btn-auth btn-google">Limpar Fila</button>
+            <div class="session-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="add_15m">+15 min cortesia</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="kick_player">Encerrar atual / próximo</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="clear_queue">Limpar fila</button>
             </div>
           </div>
         </div>
 
-        <!-- 3. PREÇOS & COMBOS (TABELA OFICIAL R$ 22,75/H) -->
-        <div class="calc-panel admin-card">
-          <span class="eyebrow">03 • TABELA DE PREÇOS & COMBOS (R$)</span>
-          <h3>Ajustar Preços e Order Bump</h3>
-          <p class="modal-desc">Altere os preços quando quiser. O servidor recalcula toda a barra deslizante automaticamente:</p>
+        <!-- 3. Preços -->
+        <div class="card">
+          <h2>Preços (PIX)</h2>
+          <p class="card-sub">Validados no servidor. Crypto aplica 15% OFF automaticamente.</p>
 
-          <div class="admin-two-cols">
-            <div>
-              <label class="form-label" for="cfg-price-10m">Teste Rápido 10 Min (R$)</label>
-              <input type="number" step="0.05" id="cfg-price-10m" class="form-input" />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="p-10m">Teste 10 min (R$)</label>
+              <input type="number" step="0.05" id="p-10m" class="input" />
             </div>
-            <div>
-              <label class="form-label" for="cfg-price-1h">Sessão 1 Hora (60m) (R$)</label>
-              <input type="number" step="0.05" id="cfg-price-1h" class="form-input" />
+            <div class="field">
+              <label class="field-label" for="p-1h">Sessão 1 Hora (R$)</label>
+              <input type="number" step="0.05" id="p-1h" class="input" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="p-2h">Combo 2h10 (R$)</label>
+              <input type="number" step="0.10" id="p-2h" class="input" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="p-4h">Passaporte 4h25 (R$)</label>
+              <input type="number" step="0.10" id="p-4h" class="input" />
             </div>
           </div>
 
-          <div class="admin-two-cols">
-            <div>
-              <label class="form-label" for="cfg-price-2h">🔥 Combo Heist 2h10 (R$)</label>
-              <input type="number" step="0.10" id="cfg-price-2h" class="form-input" />
-            </div>
-            <div>
-              <label class="form-label" for="cfg-price-4h">Passaporte Madrugada 4h25 (R$)</label>
-              <input type="number" step="0.10" id="cfg-price-4h" class="form-input" />
-            </div>
+          <div class="field">
+            <label class="field-label" for="p-bump">Adicional +30 min (R$)</label>
+            <input type="number" step="0.10" id="p-bump" class="input" />
           </div>
-
-          <label class="form-label" for="cfg-price-bump">Order Bump (+30 Minutos Extras no Checkout) (R$)</label>
-          <input type="number" step="0.10" id="cfg-price-bump" class="form-input" />
         </div>
 
-        <!-- 4. RECEBIMENTO PIX & CARTEIRAS CRYPTO (-15% OFF) -->
-        <div class="calc-panel admin-card">
-          <span class="eyebrow">04 • CHAVE PIX & CARTEIRAS CRYPTO</span>
-          <h3>Onde Você Recebe os Pagamentos</h3>
-          <p class="modal-desc">Configure sua chave PIX e endereços das suas carteiras Crypto:</p>
+        <!-- 4. PIX & Crypto -->
+        <div class="card">
+          <h2>PIX & Carteiras Crypto</h2>
+          <p class="card-sub">Usados para gerar o BR Code PIX válido e os endereços Crypto.</p>
 
-          <label class="form-label" for="cfg-pix-key">Sua Chave PIX Oficial (E-mail, CPF, CNPJ ou Aleatória)</label>
-          <input type="text" id="cfg-pix-key" class="form-input" placeholder="pix@seudominio.com" />
+          <div class="field">
+            <label class="field-label" for="cfg-pix">Chave PIX</label>
+            <input type="text" id="cfg-pix" class="input" />
+          </div>
 
-          <label class="form-label" for="cfg-wallet-usdt">Carteira USDT (Polygon / TRC20)</label>
-          <input type="text" id="cfg-wallet-usdt" class="form-input" />
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="cfg-pix-name">Nome recebedor PIX</label>
+              <input type="text" id="cfg-pix-name" class="input" maxlength="25" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="cfg-pix-city">Cidade PIX</label>
+              <input type="text" id="cfg-pix-city" class="input" maxlength="15" />
+            </div>
+          </div>
 
-          <label class="form-label" for="cfg-wallet-btc">Carteira Bitcoin (BTC / Lightning)</label>
-          <input type="text" id="cfg-wallet-btc" class="form-input" />
-
-          <label class="form-label" for="cfg-wallet-sol">Carteira Solana (SOL)</label>
-          <input type="text" id="cfg-wallet-sol" class="form-input" />
+          <div class="field">
+            <label class="field-label" for="cfg-usdt">Carteira USDT</label>
+            <input type="text" id="cfg-usdt" class="input input-mono" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="cfg-btc">Carteira BTC</label>
+            <input type="text" id="cfg-btc" class="input input-mono" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="cfg-sol">Carteira SOL</label>
+            <input type="text" id="cfg-sol" class="input input-mono" />
+          </div>
         </div>
       </div>
 
-      <!-- 5. ÚLTIMOS PEDIDOS GERADOS -->
-      <div class="calc-panel admin-orders-panel">
-        <span class="eyebrow">05 • HISTÓRICO EM TEMPO REAL</span>
-        <h3>Últimas Sessões & Pedidos Gerados</h3>
-        <div id="admin-orders-list" class="admin-orders-table-wrap">
-          <p class="modal-desc">Nenhum pedido registrado ainda nesta sessão.</p>
-        </div>
+      <!-- 5. Pedidos -->
+      <div class="card orders-card">
+        <h2>Pedidos recentes</h2>
+        <p class="card-sub">Confirme pagamentos recebidos no PIX/Crypto para liberar o console ou colocar o jogador na fila.</p>
+        <div id="orders-list" class="orders-list"></div>
       </div>
     </section>
   </main>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 
   <script src="/admin.js"></script>
 </body>

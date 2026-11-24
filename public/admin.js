@@ -1,222 +1,241 @@
-/**
- * viceplay.cloud - Painel de Administração (/admin)
- * Acesso: Usuário 5288 | Senha 5288
- */
-
 (function () {
   'use strict';
 
-  let adminToken = sessionStorage.getItem('vicecloud_admin_token') || null;
+  const $ = (id) => document.getElementById(id);
+  let token = sessionStorage.getItem('vp_admin_token') || null;
+  let toastTimer = null;
 
-  const loginSection = document.getElementById('admin-login-section');
-  const dashboardSection = document.getElementById('admin-dashboard-section');
-  const logoutBtn = document.getElementById('btn-admin-logout');
-  const loginError = document.getElementById('admin-login-error');
-  const toastEl = document.getElementById('admin-toast');
-
-  function formatDurationSeconds(sec) {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}m ${s < 10 ? '0' : ''}${s}s restantes`;
+  function toast(msg, type) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = `toast ${type || ''}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add('hidden'), 3800);
   }
 
-  async function checkAuthAndLoad() {
-    if (!adminToken) {
-      showLogin();
-      return;
-    }
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
 
+  function fmtSec(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${String(s).padStart(2, '0')}s`;
+  }
+
+  async function req(url, options) {
+    const headers = { ...(options?.headers || {}) };
+    if (token) headers['X-Admin-Token'] = token;
+    const res = await fetch(url, { ...options, headers });
+    let data = {};
     try {
-      const res = await fetch('/api/admin/state', {
-        headers: { 'X-Admin-Token': adminToken }
-      });
-      if (!res.ok) {
-        sessionStorage.removeItem('vicecloud_admin_token');
-        adminToken = null;
-        showLogin();
-        return;
-      }
-      const data = await res.json();
-      populateDashboard(data);
-      showDashboard();
-    } catch (e) {
-      showLogin();
-    }
+      data = await res.json();
+    } catch {}
+    return { ok: res.ok, status: res.status, data };
   }
 
   function showLogin() {
-    loginSection.classList.remove('hidden');
-    dashboardSection.classList.add('hidden');
-    logoutBtn.classList.add('hidden');
+    $('admin-login').classList.remove('hidden');
+    $('admin-dashboard').classList.add('hidden');
+    $('btn-admin-logout').classList.add('hidden');
   }
 
   function showDashboard() {
-    loginSection.classList.add('hidden');
-    dashboardSection.classList.remove('hidden');
-    logoutBtn.classList.remove('hidden');
+    $('admin-login').classList.add('hidden');
+    $('admin-dashboard').classList.remove('hidden');
+    $('btn-admin-logout').classList.remove('hidden');
   }
 
-  function populateDashboard(data) {
+  async function loadState() {
+    if (!token) return showLogin();
+    const { ok, data } = await req('/api/admin/state');
+    if (!ok) {
+      sessionStorage.removeItem('vp_admin_token');
+      token = null;
+      return showLogin();
+    }
+    fill(data);
+    showDashboard();
+  }
+
+  function fill(data) {
     const c = data.ps5Config;
     const p = data.packagesConfig;
 
-    document.getElementById('cfg-stream-title').value = c.streamTitle || '';
-    document.getElementById('cfg-stream-mode').value = c.streamMode || 'youtube';
-    document.getElementById('cfg-stream-url').value = c.streamSourceUrl || '';
+    $('cfg-stream-title').value = c.streamTitle || '';
+    $('cfg-stream-mode').value = c.streamMode || 'youtube';
+    $('cfg-stream-url').value = c.streamSourceUrl || '';
 
-    document.getElementById('cfg-console-status').value = c.consoleStatus || 'online';
-    document.getElementById('cfg-ps5-ip').value = c.ps5LocalIp || '';
-    document.getElementById('cfg-remote-pin').value = c.remotePlayPin || '';
-    document.getElementById('cfg-connection-mode').value = c.connectionMode || 'parsec_chiaki';
-    document.getElementById('cfg-parsec-url').value = c.parsecInviteUrl || '';
+    $('cfg-status').value = c.consoleStatus || 'online';
+    $('cfg-ip').value = c.ps5LocalIp || '';
+    $('cfg-pin').value = c.remotePlayPin || '';
+    $('cfg-mode').value = c.connectionMode || 'parsec_chiaki';
+    $('cfg-parsec').value = c.parsecInviteUrl || '';
 
-    document.getElementById('cfg-pix-key').value = c.pixKey || '';
-    document.getElementById('cfg-wallet-usdt').value = c.walletUsdt || '';
-    document.getElementById('cfg-wallet-btc').value = c.walletBtc || '';
-    document.getElementById('cfg-wallet-sol').value = c.walletSol || '';
+    $('p-10m').value = p.packages.trial_10m.priceBRL;
+    $('p-1h').value = p.packages.hour_1h.priceBRL;
+    $('p-2h').value = p.packages.combo_2h.priceBRL;
+    $('p-4h').value = p.packages.pass_4h.priceBRL;
+    $('p-bump').value = p.bumpPriceBRL;
 
-    document.getElementById('cfg-price-10m').value = p.packages.trial_10m.priceBRL;
-    document.getElementById('cfg-price-1h').value = p.packages.hour_1h.priceBRL;
-    document.getElementById('cfg-price-2h').value = p.packages.combo_2h.priceBRL;
-    document.getElementById('cfg-price-4h').value = p.packages.pass_4h.priceBRL;
-    document.getElementById('cfg-price-bump').value = p.bumpPriceBRL;
+    $('cfg-pix').value = c.pixKey || '';
+    $('cfg-pix-name').value = c.pixName || '';
+    $('cfg-pix-city').value = c.pixCity || '';
+    $('cfg-usdt').value = c.walletUsdt || '';
+    $('cfg-btc').value = c.walletBtc || '';
+    $('cfg-sol').value = c.walletSol || '';
 
-    renderActivePlayerAndQueue(c.activePlayer, data.queueSummary);
-    renderOrdersList(data.ordersList || []);
-  }
+    // Status OAuth
+    const oauthBox = $('oauth-status');
+    oauthBox.replaceChildren(
+      el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado (.env)'}`),
+      el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado (.env)'}`),
+      el('span', `pill ${data.demoMode ? 'pill-cyan' : ''}`, `Modo teste: ${data.demoMode ? 'ligado' : 'desligado'}`)
+    );
 
-  function renderActivePlayerAndQueue(activePlayer, queueSummary) {
-    const lbl = document.getElementById('admin-active-player-label');
-    if (activePlayer) {
-      lbl.textContent = `${activePlayer.userHandle} (${activePlayer.provider.toUpperCase()}) • ${formatDurationSeconds(activePlayer.remainingSeconds)}`;
-    } else {
-      lbl.textContent = 'Nenhum (Console Livre)';
-    }
+    // Sessão ativa e fila
+    const ap = c.activePlayer;
+    $('adm-active').textContent = ap ? `${ap.name} · ${fmtSec(ap.remainingSeconds)}` : 'Nenhum (livre)';
+    const q = data.queueSummary || { queueOnlyCount: 0, estimatedWaitMinutesForNewPlayer: 0 };
+    $('adm-queue').textContent = q.queueOnlyCount > 0 ? `${q.queueOnlyCount} esperando (~${q.estimatedWaitMinutesForNewPlayer}m)` : '0';
 
-    const qLbl = document.getElementById('admin-queue-count-label');
-    if (qLbl && queueSummary) {
-      qLbl.textContent =
-        queueSummary.queueOnlyCount > 0
-          ? `${queueSummary.queueOnlyCount} esperando na fila (~${queueSummary.estimatedWaitMinutesForNewPlayer}m total)`
-          : '0 esperando na fila';
-    }
-  }
-
-  function renderOrdersList(orders) {
-    const wrap = document.getElementById('admin-orders-list');
-    if (!orders.length) {
-      wrap.innerHTML = '<p class="modal-desc">Nenhum pedido registrado ainda nesta sessão.</p>';
+    // Pedidos
+    const wrap = $('orders-list');
+    wrap.replaceChildren();
+    const list = data.orders || [];
+    if (!list.length) {
+      wrap.append(el('p', 'card-sub', 'Nenhum pedido ainda.'));
       return;
     }
 
-    const statusMap = {
-      active: '🟢 Jogando Agora',
-      queued: '⏳ Na Fila',
-      completed: '✓ Concluído',
-      pending: 'Aguardando Pgto'
+    const labels = {
+      pending: 'Aguardando pgto',
+      queued: 'Na fila',
+      active: 'Jogando',
+      completed: 'Concluído',
+      cancelled: 'Cancelado',
+      expired: 'Expirado'
     };
 
-    const rows = orders
-      .map(
-        (o) => `
-      <div class="admin-order-row">
-        <div><strong>#${o.orderId}</strong> • ${o.userHandle} (${o.userProvider})</div>
-        <div>${o.packageName} (${o.totalMinutes} min)</div>
-        <div class="text-green">R$ ${o.finalPriceBRL.toFixed(2)} (${o.paymentMethod.toUpperCase()})</div>
-        <div>Status: <strong>${statusMap[o.status] || o.status}</strong></div>
-      </div>
-    `
-      )
-      .join('');
+    list.forEach((o) => {
+      const row = el('div', 'order-row');
+      row.append(
+        el('div', '', `#${o.orderId} · ${o.userName} (${o.userProvider})`),
+        el('div', '', `${o.packageName} (${o.totalMinutes}m)`),
+        el('div', 'good', `R$ ${Number(o.finalPriceBRL).toFixed(2).replace('.', ',')} · ${o.paymentMethod.toUpperCase()}`),
+        el('div', '', labels[o.status] || o.status)
+      );
 
-    wrap.innerHTML = rows;
+      const actions = el('div', 'order-row-actions');
+      if (o.status === 'pending') {
+        const confirmBtn = el('button', 'btn btn-primary btn-sm', 'Confirmar');
+        confirmBtn.type = 'button';
+        confirmBtn.addEventListener('click', () => runAction('confirm_order', o.orderId));
+        actions.append(confirmBtn);
+      }
+      if (['pending', 'queued', 'active'].includes(o.status)) {
+        const cancelBtn = el('button', 'btn btn-danger btn-sm', 'Cancelar');
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', () => runAction('cancel_order', o.orderId));
+        actions.append(cancelBtn);
+      }
+      row.append(actions);
+      wrap.append(row);
+    });
   }
 
-  async function saveAllConfig(extraAction = null) {
+  async function saveConfig() {
     const payload = {
       ps5Config: {
-        streamTitle: document.getElementById('cfg-stream-title').value.trim(),
-        streamMode: document.getElementById('cfg-stream-mode').value,
-        streamSourceUrl: document.getElementById('cfg-stream-url').value.trim(),
-        consoleStatus: document.getElementById('cfg-console-status').value,
-        ps5LocalIp: document.getElementById('cfg-ps5-ip').value.trim(),
-        remotePlayPin: document.getElementById('cfg-remote-pin').value.trim(),
-        connectionMode: document.getElementById('cfg-connection-mode').value,
-        parsecInviteUrl: document.getElementById('cfg-parsec-url').value.trim(),
-        pixKey: document.getElementById('cfg-pix-key').value.trim(),
-        walletUsdt: document.getElementById('cfg-wallet-usdt').value.trim(),
-        walletBtc: document.getElementById('cfg-wallet-btc').value.trim(),
-        walletSol: document.getElementById('cfg-wallet-sol').value.trim()
+        streamTitle: $('cfg-stream-title').value.trim(),
+        streamMode: $('cfg-stream-mode').value,
+        streamSourceUrl: $('cfg-stream-url').value.trim(),
+        consoleStatus: $('cfg-status').value,
+        ps5LocalIp: $('cfg-ip').value.trim(),
+        remotePlayPin: $('cfg-pin').value.trim(),
+        connectionMode: $('cfg-mode').value,
+        parsecInviteUrl: $('cfg-parsec').value.trim(),
+        pixKey: $('cfg-pix').value.trim(),
+        pixName: $('cfg-pix-name').value.trim(),
+        pixCity: $('cfg-pix-city').value.trim(),
+        walletUsdt: $('cfg-usdt').value.trim(),
+        walletBtc: $('cfg-btc').value.trim(),
+        walletSol: $('cfg-sol').value.trim()
       },
       prices: {
-        trial_10m: parseFloat(document.getElementById('cfg-price-10m').value),
-        hour_1h: parseFloat(document.getElementById('cfg-price-1h').value),
-        combo_2h: parseFloat(document.getElementById('cfg-price-2h').value),
-        pass_4h: parseFloat(document.getElementById('cfg-price-4h').value),
-        bumpPriceBRL: parseFloat(document.getElementById('cfg-price-bump').value)
-      },
-      action: extraAction
+        trial_10m: parseFloat($('p-10m').value),
+        hour_1h: parseFloat($('p-1h').value),
+        combo_2h: parseFloat($('p-2h').value),
+        pass_4h: parseFloat($('p-4h').value),
+        bumpPriceBRL: parseFloat($('p-bump').value)
+      }
     };
 
-    try {
-      const res = await fetch('/api/admin/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Token': adminToken
-        },
-        body: JSON.stringify(payload)
-      });
+    const { ok, data } = await req('/api/admin/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-      if (res.ok) {
-        const data = await res.json();
-        renderActivePlayerAndQueue(data.ps5Config.activePlayer, data.queueSummary);
-        document.getElementById('cfg-console-status').value = data.ps5Config.consoleStatus;
-        toastEl.classList.remove('hidden');
-        setTimeout(() => toastEl.classList.add('hidden'), 3500);
-      }
-    } catch (e) {
-      alert('Erro ao salvar configurações.');
+    if (ok) {
+      toast('Configurações salvas!', 'success');
+      loadState();
+    } else {
+      toast(data.error || 'Erro ao salvar.', 'error');
+    }
+  }
+
+  async function runAction(action, orderId) {
+    const { ok, data } = await req('/api/admin/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, orderId })
+    });
+    if (ok) {
+      toast('Ação executada!', 'success');
+      loadState();
+    } else {
+      toast(data.error || 'Erro ao executar ação.', 'error');
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    checkAuthAndLoad();
+    loadState();
 
-    document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
+    $('admin-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      loginError.classList.add('hidden');
-      const username = document.getElementById('admin-user-input').value.trim();
-      const password = document.getElementById('admin-pass-input').value.trim();
-
-      try {
-        const res = await fetch('/api/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          loginError.classList.remove('hidden');
-          return;
-        }
-        adminToken = data.adminToken;
-        sessionStorage.setItem('vicecloud_admin_token', adminToken);
-        checkAuthAndLoad();
-      } catch (err) {
-        loginError.classList.remove('hidden');
+      $('admin-error').classList.add('hidden');
+      const { ok, data } = await req('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: $('admin-user').value.trim(), password: $('admin-pass').value.trim() })
+      });
+      if (!ok || !data.adminToken) {
+        $('admin-error').textContent = data.error || 'Usuário ou senha incorretos.';
+        $('admin-error').classList.remove('hidden');
+        return;
       }
+      token = data.adminToken;
+      sessionStorage.setItem('vp_admin_token', token);
+      loadState();
     });
 
-    logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('vicecloud_admin_token');
-      adminToken = null;
+    $('btn-admin-logout').addEventListener('click', () => {
+      sessionStorage.removeItem('vp_admin_token');
+      token = null;
       showLogin();
     });
 
-    document.getElementById('btn-save-all').addEventListener('click', () => saveAllConfig(null));
-    document.getElementById('btn-admin-kick').addEventListener('click', () => saveAllConfig('kick_player'));
-    document.getElementById('btn-admin-clear-queue').addEventListener('click', () => saveAllConfig('clear_queue'));
-    document.getElementById('btn-admin-add15').addEventListener('click', () => saveAllConfig('add_15m'));
+    $('btn-save').addEventListener('click', saveConfig);
+    document.querySelectorAll('[data-action]').forEach((b) =>
+      b.addEventListener('click', () => runAction(b.dataset.action))
+    );
+
+    setInterval(() => {
+      if (token && !document.hidden) loadState();
+    }, 6000);
   });
 })();

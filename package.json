@@ -1,14 +1,12 @@
 {
   "name": "viceplay-cloud",
-  "version": "1.0.0",
-  "description": "viceplay.cloud - Lan House Digital PS5 GTA VI com OAuth, Pix, Crypto e Painel Admin",
+  "version": "2.0.0",
+  "description": "viceplay.cloud - Lan House Digital PS5 GTA VI com OAuth2 (Discord/Google), PIX BR Code, Crypto, Fila FIFO e Painel Admin",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2",
-    "helmet": "^7.1.0",
-    "express-rate-limit": "^7.2.0"
   }
 }
