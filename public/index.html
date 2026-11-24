@@ -77,7 +77,7 @@
         <p>Avulso a R$ 22,75/h. Quanto maior o pacote, mais minutos grátis e menor o valor por hora.</p>
         <div class="segmented" role="group" aria-label="Forma de pagamento">
           <button type="button" class="seg active" id="toggle-pix">PIX</button>
-          <button type="button" class="seg" id="toggle-crypto">Crypto <span class="seg-tag">-15%</span></button>
+          <button type="button" class="seg is-disabled" id="toggle-crypto" disabled>Crypto <span class="seg-tag seg-soon">Em breve</span></button>
         </div>
       </div>
 
@@ -245,10 +245,10 @@
             <strong>PIX</strong>
             <small>Liberação em segundos</small>
           </label>
-          <label class="choice" data-method-choice="crypto">
-            <input type="radio" name="pay" value="crypto" />
-            <strong>Crypto <span class="seg-tag">-15%</span></strong>
-            <small>USDT, USDC, BTC, ETH, LTC, TRX, BNB, TON</small>
+          <label class="choice is-disabled" data-method-choice="crypto">
+            <input type="radio" name="pay" value="crypto" disabled />
+            <strong>Crypto <span class="seg-tag seg-soon">Em breve</span></strong>
+            <small>Em breve</small>
           </label>
         </div>
         <div class="crypto-box hidden" id="coins">

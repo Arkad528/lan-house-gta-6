@@ -63,6 +63,7 @@ const ENV = {
   TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
 };
 
+const CRYPTO_ENABLED = false;
 const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
 const mpMode = () => {
   if (!ENV.MP_ACCESS_TOKEN) return 'none';
@@ -662,6 +663,12 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
   const baseSubtotal = Math.round((pkg.priceBRL + bumpBase) * 100) / 100;
   const cryptoOpt = resolveCryptoOption(paymentMethod);
   const isCrypto = !!cryptoOpt;
+
+  if (isCrypto && !CRYPTO_ENABLED) {
+    const err = new Error('Pagamento em Crypto disponível em breve. Utilize PIX.');
+    err.isSafeUserError = true;
+    throw err;
+  }
 
   if (isCrypto && pkg.id === 'trial_10m' && !includeBump) {
     const err = new Error('Pagamento em Crypto disponível a partir do plano de 1 hora.');

@@ -426,7 +426,7 @@
   }
 
   function isCryptoAllowed() {
-    return !(state.pkg === 'trial_10m' && !state.bump);
+    return false;
   }
 
   function renderPlans() {
@@ -538,7 +538,7 @@
       if (input) input.disabled = isCryChoice && !cryptoAllowed;
       if (isCryChoice) {
         const sm = l.querySelector('small');
-        if (sm) sm.textContent = cryptoAllowed ? 'USDT, USDC, BTC, ETH, LTC, TRX, BNB, TON' : 'Disponível a partir de 1 hora';
+        if (sm) sm.textContent = cryptoAllowed ? 'USDT, USDC, BTC, ETH, LTC, TRX, BNB, TON' : 'Em breve';
       }
     });
     $$('input[name="pay"]').forEach((r) => (r.checked = r.value === state.method));
@@ -893,6 +893,7 @@
       renderAll();
     });
     $('toggle-crypto').addEventListener('click', () => {
+      if (!isCryptoAllowed()) return;
       state.method = 'crypto';
       renderAll();
     });
