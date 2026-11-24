@@ -1518,3 +1518,10 @@ a {
   justify-content: center;
   gap: 8px;
 }
+
+.coin small {
+  display: block;
+  font-size: 0.64rem;
+  font-weight: 500;
+  opacity: 0.78;
+}

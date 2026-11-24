@@ -37,7 +37,15 @@
     pkg: 'combo_2h',
     bump: false,
     method: 'pix',
-    coin: 'usdt',
+    coin: 'usdttrc20',
+    cryptoOptions: [
+      { id: 'usdttrc20', label: 'USDT', network: 'TRC20' },
+      { id: 'usdtbsc', label: 'USDT', network: 'BEP20' },
+      { id: 'usdtmatic', label: 'USDT', network: 'Polygon' },
+      { id: 'sol', label: 'SOL', network: 'Solana' },
+      { id: 'btc', label: 'BTC', network: 'Bitcoin' },
+      { id: 'ltc', label: 'LTC', network: 'Litecoin' }
+    ],
     bumpPrice: 9.9,
     cryptoRate: 0.15,
     mpFeeRate: 0.01,
@@ -226,6 +234,13 @@
     if (typeof data.mpFeeRate === 'number') state.mpFeeRate = data.mpFeeRate;
     if (typeof data.npFeeRate === 'number') state.npFeeRate = data.npFeeRate;
     if (typeof data.usdtRateBRL === 'number') state.usdtRate = data.usdtRateBRL;
+    if (Array.isArray(data.cryptoOptions) && data.cryptoOptions.length > 0) {
+      state.cryptoOptions = data.cryptoOptions;
+      if (!state.cryptoOptions.some((c) => c.id === state.coin)) {
+        state.coin = state.cryptoOptions[0].id;
+      }
+      renderCryptoCoins();
+    }
     state.pub = data.ps5Public || null;
     renderStage();
     renderPlans();
@@ -405,6 +420,23 @@
     };
   }
 
+  function renderCryptoCoins() {
+    const wrap = $('coins');
+    if (!wrap) return;
+    wrap.replaceChildren();
+    state.cryptoOptions.forEach((opt) => {
+      const btn = el('button', `coin ${opt.id === state.coin ? 'is-active' : ''}`);
+      btn.type = 'button';
+      btn.dataset.coin = opt.id;
+      btn.append(document.createTextNode(opt.label + ' '), el('small', '', opt.network));
+      btn.addEventListener('click', () => {
+        state.coin = opt.id;
+        renderCheckout();
+      });
+      wrap.append(btn);
+    });
+  }
+
   function renderCheckout() {
     const c = calc();
 
@@ -425,8 +457,9 @@
     $('r-crypto').textContent = '- ' + money(c.discount);
     $('r-time').textContent = duration(c.minutes);
     $('r-total').textContent = money(c.total);
+    const selCoin = state.cryptoOptions.find((x) => x.id === state.coin) || { label: state.coin.toUpperCase(), network: '' };
     $('r-usdt').classList.toggle('hidden', !isCrypto());
-    $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (pago em ${state.coin.toUpperCase()})`;
+    $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (${selCoin.label} · ${selCoin.network})`;
 
     const offline = !!(state.pub && state.pub.emergencyOffline);
     const queued = state.pub && (state.pub.activePlayer || state.pub.consoleStatus === 'maintenance');
@@ -491,7 +524,7 @@
       if (PKG[pending.pkg]) state.pkg = pending.pkg;
       state.bump = !!pending.bump;
       state.method = pending.method === 'crypto' ? 'crypto' : 'pix';
-      if (['usdt', 'btc', 'sol'].includes(pending.coin)) state.coin = pending.coin;
+      if (state.cryptoOptions.some((c) => c.id === pending.coin)) state.coin = pending.coin;
       $('chk-bump').checked = state.bump;
       renderAll();
       if (pending.resume) openModal('checkout-modal');
@@ -556,17 +589,18 @@
         ? `${order.cryptoPayAmount} ${order.cryptoPayCurrency}`
         : `${money(order.finalPriceBRL)} · ${order.finalUSDT} USDT`
       : money(order.finalPriceBRL);
+    const netSuffix = order.cryptoNetwork ? ` (Rede ${order.cryptoNetwork})` : '';
     $('order-method-label').textContent = order.isCrypto
       ? order.cryptoPayAmount
-        ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency} para o endereço abaixo`
-        : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}`
+        ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency}${netSuffix}`
+        : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}${netSuffix}`
       : order.pixSource === 'mercadopago'
       ? order.mpMode === 'sandbox'
         ? 'PIX Mercado Pago (MODO TESTE — use Access Token APP_USR- para banco real)'
         : 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola'
       : 'PIX Manual (configure MP_ACCESS_TOKEN na Vercel para Mercado Pago automático)';
     $('o-code-label').textContent = order.isCrypto
-      ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}`
+      ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}${netSuffix}`
       : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
     const qrBox = $('o-qr-box');
@@ -812,6 +846,7 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     bindEvents();
+    renderCryptoCoins();
     setupReveal();
     renderAll();
     await Promise.all([loadMe(), loadConfig()]);

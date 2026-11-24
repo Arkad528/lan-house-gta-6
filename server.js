@@ -436,16 +436,58 @@ async function syncMercadoPagoPayment(order) {
 }
 
 // ---------------------------------------------------------------------------
-// NOWPayments API v1 (Crypto Automático: USDT TRC20, BTC, SOL + IPN/Polling)
+// NOWPayments API v1 (Crypto Automático + Redes dinâmicas via /v1/merchant/coins)
 // ---------------------------------------------------------------------------
-const NP_CURRENCY_MAP = {
-  usdt: 'usdttrc20',
-  btc: 'btc',
-  sol: 'sol'
-};
+const CRYPTO_CATALOG = [
+  { id: 'usdttrc20', label: 'USDT', network: 'TRC20', fallbackKey: 'walletUsdt' },
+  { id: 'usdtbsc', label: 'USDT', network: 'BEP20', fallbackKey: 'walletUsdt' },
+  { id: 'usdtmatic', label: 'USDT', network: 'Polygon', fallbackKey: 'walletUsdt' },
+  { id: 'sol', label: 'SOL', network: 'Solana', fallbackKey: 'walletSol' },
+  { id: 'btc', label: 'BTC', network: 'Bitcoin', fallbackKey: 'walletBtc' },
+  { id: 'ltc', label: 'LTC', network: 'Litecoin', fallbackKey: 'walletBtc' }
+];
+
+const CRYPTO_BY_ID = Object.fromEntries(CRYPTO_CATALOG.map((c) => [c.id, c]));
+// Compatibilidade com aliases curtos ('usdt' -> 'usdttrc20')
+const CRYPTO_ALIASES = { usdt: 'usdttrc20', btc: 'btc', sol: 'sol', ltc: 'ltc' };
+
+function resolveCryptoOption(method) {
+  const key = CRYPTO_ALIASES[method] || method;
+  return CRYPTO_BY_ID[key] || null;
+}
+
+let npCoinsCache = { fetchedAt: 0, coins: null };
+
+async function getNowPaymentsAvailableOptions() {
+  if (!npEnabled()) return CRYPTO_CATALOG;
+  const now = Date.now();
+  if (npCoinsCache.coins && now - npCoinsCache.fetchedAt < 10 * 60_000) {
+    return npCoinsCache.coins;
+  }
+  try {
+    const r = await fetch('https://api.nowpayments.io/v1/merchant/coins', {
+      headers: { 'x-api-key': ENV.NOWPAYMENTS_API_KEY },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const enabledSet = new Set((data.selectedCurrencies || []).map((c) => String(c).toLowerCase()));
+      if (enabledSet.size > 0) {
+        const filtered = CRYPTO_CATALOG.filter((c) => enabledSet.has(c.id));
+        const result = filtered.length > 0 ? filtered : CRYPTO_CATALOG;
+        npCoinsCache = { fetchedAt: now, coins: result, rawCount: enabledSet.size };
+        return result;
+      }
+    }
+  } catch (err) {
+    console.error('[playgta6] Falha ao listar moedas NOWPayments:', err.message);
+  }
+  return CRYPTO_CATALOG;
+}
 
 async function createNowPaymentsCrypto(req, order) {
-  const payCurrency = NP_CURRENCY_MAP[order.paymentMethod] || 'usdttrc20';
+  const opt = resolveCryptoOption(order.paymentMethod) || CRYPTO_CATALOG[0];
+  const payCurrency = opt.id;
   const baseUrl = getBaseUrl(req);
   const body = {
     price_amount: Number(order.finalPriceBRL.toFixed(2)),
@@ -477,11 +519,11 @@ async function createNowPaymentsCrypto(req, order) {
     if (r.status === 401 || r.status === 403 || rawMsg.includes('api key')) {
       userMsg = 'Chave da NOWPayments inválida. Verifique NOWPAYMENTS_API_KEY na Vercel.';
     } else if (rawMsg.includes('minimal') || rawMsg.includes('less than') || rawMsg.includes('minimum')) {
-      userMsg = 'Valor abaixo do mínimo aceito por esta rede Crypto. Escolha um plano maior (ex: 1h, 2h15 ou 5h) ou pague via PIX.';
+      userMsg = 'Valor abaixo do mínimo aceito por esta rede Crypto. Tente USDT (BEP20/Polygon), SOL, LTC ou pague via PIX.';
     } else if (rawMsg.includes('payout') || rawMsg.includes('wallet') || rawMsg.includes('address')) {
       userMsg = 'Configure sua carteira de recebimento (Outcome Wallet) no painel da NOWPayments.';
     } else if (rawMsg.includes('currency') || rawMsg.includes('estimate') || rawMsg.includes('unavailable')) {
-      userMsg = 'Moeda indisponível para este valor na NOWPayments. Tente outra moeda ou pague via PIX.';
+      userMsg = 'Esta rede/moeda não está habilitada na sua conta NOWPayments. Tente outra rede ou pague via PIX.';
     }
     const err = new Error(userMsg);
     err.isSafeUserError = true;
@@ -492,7 +534,8 @@ async function createNowPaymentsCrypto(req, order) {
     npPaymentId: String(data.payment_id),
     cryptoWallet: String(data.pay_address),
     cryptoPayAmount: data.pay_amount !== undefined ? String(data.pay_amount) : null,
-    cryptoPayCurrency: String(data.pay_currency || payCurrency).toUpperCase()
+    cryptoPayCurrency: String(data.pay_currency || payCurrency).toUpperCase(),
+    cryptoNetwork: data.network ? String(data.network).toUpperCase() : opt.network
   };
 }
 
@@ -640,7 +683,8 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
   const bumpBase = includeBump ? packagesConfig.bumpPriceBRL : 0;
   const bumpMinutes = includeBump ? packagesConfig.bumpMinutes : 0;
   const baseSubtotal = Math.round((pkg.priceBRL + bumpBase) * 100) / 100;
-  const isCrypto = ['usdt', 'btc', 'sol'].includes(paymentMethod);
+  const cryptoOpt = resolveCryptoOption(paymentMethod);
+  const isCrypto = !!cryptoOpt;
 
   const pixSubtotal = grossUp(baseSubtotal, packagesConfig.mpFeeRate);
   let finalPriceBRL;
@@ -666,7 +710,8 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
     discountBRL: discount,
     finalPriceBRL,
     finalUSDT: (finalPriceBRL / packagesConfig.usdtRateBRL).toFixed(2),
-    paymentMethod: isCrypto ? paymentMethod : 'pix',
+    paymentMethod: isCrypto ? cryptoOpt.id : 'pix',
+    cryptoNetwork: isCrypto ? cryptoOpt.network : null,
     isCrypto
   };
 }
@@ -714,6 +759,7 @@ function publicOrder(o) {
     ticketUrl: o.ticketUrl || null,
     cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
     cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
+    cryptoNetwork: o.isCrypto ? o.cryptoNetwork || null : null,
     queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
     estimatedWaitMinutes: queueIdx >= 0 ? summary.items[queueIdx].estimatedWaitMinutes : null,
     remainingSeconds: isActive ? ps5Config.activePlayer.remainingSeconds : null,
@@ -953,6 +999,7 @@ async function handler(req, res) {
       const cid = url.searchParams.get('cid');
       if (cid && /^[a-z0-9]{8,32}$/.test(cid) && viewers.size < 5000) viewers.set(cid, Date.now());
       const ap = ps5Config.activePlayer;
+      const cryptoOptions = await getNowPaymentsAvailableOptions();
       return sendJson(res, 200, {
         csrfToken: issueCsrf(user?.uid),
         packages: packagesConfig.packages,
@@ -961,6 +1008,7 @@ async function handler(req, res) {
         mpFeeRate: packagesConfig.mpFeeRate,
         npFeeRate: packagesConfig.npFeeRate,
         usdtRateBRL: packagesConfig.usdtRateBRL,
+        cryptoOptions: cryptoOptions.map((c) => ({ id: c.id, label: c.label, network: c.network })),
         ps5Public: {
           consoleStatus: ps5Config.emergencyOffline ? 'maintenance' : ps5Config.consoleStatus,
           emergencyOffline: ps5Config.emergencyOffline,
@@ -1020,12 +1068,16 @@ async function handler(req, res) {
           order.pixSource = 'manual';
         }
       } else {
+        const fallbackOpt = resolveCryptoOption(calc.paymentMethod);
+        const fallbackWallet = fallbackOpt ? ps5Config[fallbackOpt.fallbackKey] : ps5Config.walletUsdt;
+        order.cryptoWallet = fallbackWallet;
         if (npEnabled()) {
           const np = await createNowPaymentsCrypto(req, order);
           order.npPaymentId = np.npPaymentId;
           order.cryptoWallet = np.cryptoWallet;
           order.cryptoPayAmount = np.cryptoPayAmount;
           order.cryptoPayCurrency = np.cryptoPayCurrency;
+          order.cryptoNetwork = np.cryptoNetwork;
         }
         order.pixQrBase64 = await generateQrBase64(order.cryptoWallet);
       }
