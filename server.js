@@ -42,11 +42,16 @@ async function generateQrBase64(text) {
   }
 })();
 
+const DEFAULT_ADMIN_HASHES = new Set([
+  'cce496487612c8b23f719bdbe8c5b1169c390dd9490b0b638e88199c8f96655d',
+  'eb88313feda4f7618e42265f6b0b2ecd7a7800e0d5a43c2089f727885a6e3b89'
+]);
+
 const ENV = {
   PORT: Number(process.env.PORT) || 3000,
   BASE_URL: (process.env.BASE_URL || '').replace(/\/+$/, ''),
   ADMIN_DISCORD_IDS: new Set(
-    (process.env.ADMIN_DISCORD_IDS || '799731357064233001,359467850748133377')
+    (process.env.ADMIN_DISCORD_IDS || '')
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^\d{15,25}$/.test(s))
@@ -57,13 +62,17 @@ const ENV = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN || '',
   MP_PUBLIC_KEY: process.env.MP_PUBLIC_KEY || '',
+  MP_WEBHOOK_SECRET: process.env.MP_WEBHOOK_SECRET || '',
   NOWPAYMENTS_API_KEY: process.env.NOWPAYMENTS_API_KEY || '',
   NOWPAYMENTS_IPN_SECRET: process.env.NOWPAYMENTS_IPN_SECRET || '',
+  KV_REST_API_URL: (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, ''),
+  KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
   DEMO_MODE_RAW: process.env.DEMO_MODE,
   TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
 };
 
 const CRYPTO_ENABLED = false;
+const kvEnabled = () => !!(ENV.KV_REST_API_URL && ENV.KV_REST_API_TOKEN);
 const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
 const mpMode = () => {
   if (!ENV.MP_ACCESS_TOKEN) return 'none';
@@ -79,13 +88,19 @@ const isDemoMode = () => {
   return !process.env.VERCEL && !process.env.RENDER;
 };
 
-let SECRET = process.env.SESSION_SECRET || '';
-if (!SECRET) {
+const WEAK_SECRETS = new Set(['troque-por-uma-chave-secreta-longa-e-aleatoria', 'changeme', 'secret', 'default']);
+let SECRET = (process.env.SESSION_SECRET || '').trim();
+if (!SECRET || SECRET.length < 32 || WEAK_SECRETS.has(SECRET.toLowerCase())) {
+  if (SECRET) {
+    console.error('[playgta6] SESSION_SECRET fraco ou padrão detectado! Ignorado e substituído por segredo aleatório forte.');
+  } else {
+    console.warn('[playgta6] SESSION_SECRET não definido: usando segredo temporário (logins caem ao reiniciar).');
+  }
   SECRET = crypto.randomBytes(32).toString('hex');
-  console.warn('[playgta6] SESSION_SECRET não definido: usando segredo temporário (logins caem ao reiniciar).');
 }
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ---------------------------------------------------------------------------
@@ -126,6 +141,89 @@ function grossUp(amount, feeRate) {
 
 const orders = new Map(); // orderId -> order
 const viewers = new Map(); // clientId -> lastSeen
+
+// ---------------------------------------------------------------------------
+// Estado compartilhado opcional (Upstash Redis / Vercel KV via REST, 0 deps)
+// ---------------------------------------------------------------------------
+const KV_STATE_KEY = 'playgta6:state:v1';
+let lastKvSync = 0;
+
+async function syncStateFromKv(force) {
+  if (!kvEnabled()) return;
+  const now = Date.now();
+  if (!force && now - lastKvSync < 2000) return;
+  lastKvSync = now;
+  try {
+    const r = await fetch(ENV.KV_REST_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ENV.KV_REST_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(['GET', KV_STATE_KEY]),
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data || typeof data.result !== 'string') return;
+    const snap = JSON.parse(data.result);
+    if (snap.ps5Config) {
+      Object.assign(ps5Config, snap.ps5Config);
+      if (ps5Config.activePlayer && Number.isFinite(snap.savedAt)) {
+        const elapsedSec = Math.max(0, Math.floor((now - snap.savedAt) / 1000));
+        ps5Config.activePlayer.remainingSeconds = Math.max(0, ps5Config.activePlayer.remainingSeconds - elapsedSec);
+        if (ps5Config.activePlayer.remainingSeconds <= 0) finishActive();
+      }
+    }
+    if (snap.packagesConfig && snap.packagesConfig.packages) {
+      if (typeof snap.packagesConfig.bumpPriceBRL === 'number') packagesConfig.bumpPriceBRL = snap.packagesConfig.bumpPriceBRL;
+      for (const id of Object.keys(packagesConfig.packages)) {
+        const savedPkg = snap.packagesConfig.packages[id];
+        if (savedPkg && typeof savedPkg.priceBRL === 'number') packagesConfig.packages[id].priceBRL = savedPkg.priceBRL;
+      }
+    }
+    if (Array.isArray(snap.orders)) {
+      for (const so of snap.orders) {
+        if (!so || !so.orderId) continue;
+        const local = orders.get(so.orderId);
+        orders.set(so.orderId, local ? { ...so, pixQrBase64: local.pixQrBase64 || null } : so);
+      }
+    }
+  } catch (err) {
+    console.error('[playgta6] KV load erro:', err.message);
+  }
+}
+
+async function persistStateToKv() {
+  if (!kvEnabled()) return;
+  try {
+    const snap = {
+      savedAt: Date.now(),
+      ps5Config,
+      packagesConfig: {
+        bumpPriceBRL: packagesConfig.bumpPriceBRL,
+        packages: Object.fromEntries(
+          Object.entries(packagesConfig.packages).map(([k, v]) => [k, { priceBRL: v.priceBRL }])
+        )
+      },
+      orders: [...orders.values()]
+        .slice(-150)
+        .map(({ pixQrBase64, ...rest }) => rest)
+    };
+    await fetch(ENV.KV_REST_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ENV.KV_REST_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(['SET', KV_STATE_KEY, JSON.stringify(snap)]),
+      signal: AbortSignal.timeout(4000)
+    });
+    lastKvSync = Date.now();
+  } catch (err) {
+    console.error('[playgta6] KV save erro:', err.message);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Utilitários
@@ -220,8 +318,12 @@ function setCookie(req, res, name, value, maxAgeSec) {
 }
 
 function getIp(req) {
-  if (ENV.TRUST_PROXY && req.headers['x-forwarded-for']) {
-    return String(req.headers['x-forwarded-for']).split(',')[0].trim();
+  if (ENV.TRUST_PROXY) {
+    const vercelIp = req.headers['x-vercel-forwarded-for'] || req.headers['x-real-ip'];
+    if (vercelIp) return String(vercelIp).split(',')[0].trim();
+    if (req.headers['x-forwarded-for']) {
+      return String(req.headers['x-forwarded-for']).split(',')[0].trim();
+    }
   }
   return req.socket?.remoteAddress || 'unknown';
 }
@@ -275,7 +377,16 @@ function makeLimiter(windowMs, max) {
   }, windowMs).unref();
   return (key) => {
     const now = Date.now();
-    if (hits.size > 10000) hits.clear();
+    if (hits.size > 10000) {
+      for (const [k, v] of hits) if (now - v.start > windowMs) hits.delete(k);
+      if (hits.size > 10000) {
+        let removed = 0;
+        for (const k of hits.keys()) {
+          hits.delete(k);
+          if (++removed >= 2000) break;
+        }
+      }
+    }
     const rec = hits.get(key);
     if (!rec || now - rec.start > windowMs) {
       hits.set(key, { start: now, count: 1 });
@@ -288,6 +399,7 @@ function makeLimiter(windowMs, max) {
 
 const globalLimiter = makeLimiter(60_000, 150);
 const checkoutLimiter = makeLimiter(60_000, 10);
+const checkoutIpLimiter = makeLimiter(60_000, 15);
 const adminActionLimiter = makeLimiter(60_000, 60);
 const webhookLimiter = makeLimiter(60_000, 30);
 
@@ -300,7 +412,9 @@ function isAdminUser(user) {
   if (!user || user.provider !== 'discord' || typeof user.uid !== 'string') return false;
   if (!user.uid.startsWith('discord:')) return false;
   const discordId = user.uid.slice('discord:'.length);
-  return ENV.ADMIN_DISCORD_IDS.has(discordId);
+  if (ENV.ADMIN_DISCORD_IDS.size > 0) return ENV.ADMIN_DISCORD_IDS.has(discordId);
+  const digest = crypto.createHash('sha256').update(discordId).digest('hex');
+  return DEFAULT_ADMIN_HASHES.has(digest);
 }
 
 function issueCsrf(uid) {
@@ -406,6 +520,30 @@ async function syncMercadoPagoPayment(order) {
   } catch (err) {
     console.error('[playgta6] Falha ao consultar Mercado Pago:', err.message);
   }
+}
+
+function verifyMercadoPagoSignature(req, dataId) {
+  if (!ENV.MP_WEBHOOK_SECRET) return true;
+  const sigHeader = String(req.headers['x-signature'] || '');
+  if (!sigHeader) return false;
+  const parts = {};
+  for (const seg of sigHeader.split(',')) {
+    const idx = seg.indexOf('=');
+    if (idx > 0) parts[seg.slice(0, idx).trim()] = seg.slice(idx + 1).trim();
+  }
+  const ts = parts.ts;
+  const v1 = parts.v1;
+  if (!ts || !v1 || !/^\d{9,14}$/.test(ts)) return false;
+  const tsSec = ts.length > 11 ? Math.floor(Number(ts) / 1000) : Number(ts);
+  if (Math.abs(Math.floor(Date.now() / 1000) - tsSec) > 300) return false;
+
+  const requestId = String(req.headers['x-request-id'] || '').trim();
+  let manifest = '';
+  if (dataId) manifest += `id:${String(dataId).toLowerCase()};`;
+  if (requestId) manifest += `request-id:${requestId};`;
+  manifest += `ts:${ts};`;
+  const expected = crypto.createHmac('sha256', ENV.MP_WEBHOOK_SECRET).update(manifest).digest('hex');
+  return safeEqual(v1, expected);
 }
 
 // ---------------------------------------------------------------------------
@@ -559,15 +697,23 @@ async function syncNowPaymentsPayment(order) {
   }
 }
 
+function sortKeysRecursive(val) {
+  if (Array.isArray(val)) return val.map(sortKeysRecursive);
+  if (val && typeof val === 'object') {
+    return Object.keys(val)
+      .sort()
+      .reduce((acc, k) => {
+        acc[k] = sortKeysRecursive(val[k]);
+        return acc;
+      }, {});
+  }
+  return val;
+}
+
 function verifyNowPaymentsIpn(bodyObj, sigHeader) {
   if (!ENV.NOWPAYMENTS_IPN_SECRET) return true;
   if (!sigHeader) return false;
-  const sorted = Object.keys(bodyObj || {})
-    .sort()
-    .reduce((acc, k) => {
-      acc[k] = bodyObj[k];
-      return acc;
-    }, {});
+  const sorted = sortKeysRecursive(bodyObj || {});
   const expected = crypto.createHmac('sha512', ENV.NOWPAYMENTS_IPN_SECRET).update(JSON.stringify(sorted)).digest('hex');
   return safeEqual(sigHeader, expected);
 }
@@ -886,7 +1032,8 @@ async function oauthCallback(req, res, provider, query) {
       handle: clip(profile.handle, 80),
       avatar: profile.avatar && /^https:\/\//.test(profile.avatar) ? profile.avatar : null
     };
-    setCookie(req, res, 'pg6_session', sign({ t: 'sess', u: user, exp: Date.now() + SESSION_TTL_MS }), SESSION_TTL_MS / 1000);
+    const ttlMs = isAdminUser(user) ? ADMIN_SESSION_TTL_MS : SESSION_TTL_MS;
+    setCookie(req, res, 'pg6_session', sign({ t: 'sess', u: user, exp: Date.now() + ttlMs }), ttlMs / 1000);
     redirect(res, `${safeNext}?login=ok`);
   } catch (err) {
     console.error('[playgta6] Falha no OAuth:', err.message);
@@ -1032,10 +1179,11 @@ async function handler(req, res) {
 
     // ---------------- Público ----------------
     if (req.method === 'GET' && p === '/api/config') {
+      await syncStateFromKv(false);
       const cid = url.searchParams.get('cid');
       if (cid && /^[a-z0-9]{8,32}$/.test(cid) && viewers.size < 5000) viewers.set(cid, Date.now());
       const ap = ps5Config.activePlayer;
-      const cryptoOptions = await getNowPaymentsAvailableOptions();
+      const cryptoOptions = CRYPTO_ENABLED ? await getNowPaymentsAvailableOptions() : CRYPTO_CATALOG;
       return sendJson(res, 200, {
         csrfToken: issueCsrf(user?.uid),
         packages: packagesConfig.packages,
@@ -1059,10 +1207,11 @@ async function handler(req, res) {
 
     if (req.method === 'POST' && p === '/api/checkout') {
       if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
+      await syncStateFromKv(true);
       if (ps5Config.emergencyOffline) return sendJson(res, 503, { error: 'Sistema desligado em modo de emergência. Tente mais tarde.' });
       if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
       if (!verifyCsrf(req.headers['x-csrf-token'], user.uid, true)) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
-      if (!checkoutLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
+      if (!checkoutLimiter(user.uid) || !checkoutIpLimiter(ip)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
 
       const pendingCount = [...orders.values()].filter((o) => o.uid === user.uid && o.status === 'pending').length;
       if (pendingCount >= 3) return sendJson(res, 429, { error: 'Você já tem pedidos aguardando pagamento.' });
@@ -1116,11 +1265,13 @@ async function handler(req, res) {
       }
 
       orders.set(orderId, order);
+      await persistStateToKv();
       return sendJson(res, 200, { ok: true, order: publicOrder(order) });
     }
 
     if (req.method === 'GET' && p === '/api/order') {
       if (!user) return sendJson(res, 401, { error: 'login' });
+      await syncStateFromKv(false);
       const id = String(url.searchParams.get('id') || '');
       let o = orders.get(id);
 
@@ -1156,18 +1307,21 @@ async function handler(req, res) {
       }
 
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+      const prevStatus = o.status;
       if (o.isCrypto) await syncNowPaymentsPayment(o);
       else await syncMercadoPagoPayment(o);
       if (o.status === 'pending' && Date.now() - Date.parse(o.createdAt) > 30 * 60_000) {
         o.status = 'expired';
       }
+      if (o.status !== prevStatus) await persistStateToKv();
       return sendJson(res, 200, { ok: true, order: publicOrder(o) });
     }
 
     // Webhook IPN oficial da NOWPayments (confirma Crypto automaticamente)
     if (req.method === 'POST' && p === '/api/webhooks/nowpayments') {
       if (!webhookLimiter(ip)) return sendJson(res, 429, { error: 'rate_limit' });
-      if (!npEnabled()) return sendJson(res, 200, { ok: true });
+      if (!CRYPTO_ENABLED || !npEnabled()) return sendJson(res, 200, { ok: true });
+      await syncStateFromKv(true);
       const body = await readJson(req).catch(() => ({}));
       if (!verifyNowPaymentsIpn(body, req.headers['x-nowpayments-sig'])) {
         return sendJson(res, 403, { error: 'Assinatura IPN inválida.' });
@@ -1179,8 +1333,11 @@ async function handler(req, res) {
         (npId ? [...orders.values()].find((o) => o.npPaymentId === npId) : null);
       if (target && target.status === 'pending') {
         if (!target.npPaymentId && npId) target.npPaymentId = npId;
-        target.lastNpCheck = 0;
-        await syncNowPaymentsPayment(target);
+        if (!target.lastNpCheck || Date.now() - target.lastNpCheck >= 2000) {
+          target.lastNpCheck = 0;
+          await syncNowPaymentsPayment(target);
+          await persistStateToKv();
+        }
       }
       return sendJson(res, 200, { ok: true });
     }
@@ -1189,11 +1346,15 @@ async function handler(req, res) {
     if (req.method === 'POST' && p === '/api/webhooks/mercadopago') {
       if (!webhookLimiter(ip)) return sendJson(res, 429, { error: 'rate_limit' });
       if (!mpEnabled()) return sendJson(res, 200, { ok: true });
-      const hasPending = [...orders.values()].some((o) => o.status === 'pending' && !o.isCrypto);
-      if (!hasPending) return sendJson(res, 200, { ok: true });
       const body = await readJson(req).catch(() => ({}));
       const rawMpId = String(body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id') || '').trim();
       const mpId = /^\d{4,25}$/.test(rawMpId) ? rawMpId : '';
+      if (!verifyMercadoPagoSignature(req, mpId)) {
+        return sendJson(res, 403, { error: 'Assinatura Mercado Pago inválida.' });
+      }
+      await syncStateFromKv(true);
+      const hasPending = [...orders.values()].some((o) => o.status === 'pending' && !o.isCrypto);
+      if (!hasPending) return sendJson(res, 200, { ok: true });
       if (mpId) {
         let target = [...orders.values()].find((o) => o.mpPaymentId === mpId);
         if (!target) {
@@ -1210,14 +1371,16 @@ async function handler(req, res) {
                 if (!target.mpPaymentId) target.mpPaymentId = mpId;
                 target.lastMpCheck = 0;
                 await syncMercadoPagoPayment(target);
+                await persistStateToKv();
               }
             }
           } catch (err) {
             console.error('[playgta6] Webhook MP erro:', err.message);
           }
-        } else {
+        } else if (target.status === 'pending' && (!target.lastMpCheck || Date.now() - target.lastMpCheck >= 2000)) {
           target.lastMpCheck = 0;
           await syncMercadoPagoPayment(target);
+          await persistStateToKv();
         }
       }
       return sendJson(res, 200, { ok: true });
@@ -1242,6 +1405,7 @@ async function handler(req, res) {
       if (!isAdminUser(user)) return sendJson(res, 403, { error: 'forbidden', message: 'Sua conta não tem permissão de administrador.' });
 
       if (req.method === 'GET' && p === '/api/admin/state') {
+        await syncStateFromKv(true);
         return sendJson(res, 200, {
           ok: true,
           csrfToken: issueCsrf(user.uid),
@@ -1270,6 +1434,7 @@ async function handler(req, res) {
       }
 
       if (req.method === 'POST' && p === '/api/admin/save') {
+        await syncStateFromKv(true);
         const body = await readJson(req);
         const c = body.ps5Config || {};
         const str = (k, max) => {
@@ -1277,6 +1442,7 @@ async function handler(req, res) {
         };
         if (['online', 'busy', 'maintenance'].includes(c.consoleStatus)) ps5Config.consoleStatus = c.consoleStatus;
         if (['youtube', 'twitch', 'hls_webrtc'].includes(c.streamMode)) ps5Config.streamMode = c.streamMode;
+        if (['parsec_chiaki', 'webrtc_capture', 'ps_remote_direct'].includes(c.connectionMode)) ps5Config.connectionMode = c.connectionMode;
         if (typeof c.streamSourceUrl === 'string' && c.streamSourceUrl.trim()) {
           if (!isValidHttpsUrl(c.streamSourceUrl, ALLOWED_STREAM_HOSTS)) {
             return sendJson(res, 400, { error: 'URL de stream deve ser HTTPS do YouTube, Twitch ou VDO.Ninja.' });
@@ -1286,7 +1452,6 @@ async function handler(req, res) {
         str('streamTitle', 100);
         str('ps5LocalIp', 45);
         str('remotePlayPin', 20);
-        str('connectionMode', 30);
         if (typeof c.parsecInviteUrl === 'string' && c.parsecInviteUrl.trim()) {
           if (!isValidHttpsUrl(c.parsecInviteUrl)) {
             return sendJson(res, 400, { error: 'Link Parsec/WebRTC deve começar com https:// válido.' });
@@ -1344,10 +1509,12 @@ async function handler(req, res) {
           if (ps5Config.consoleStatus === 'busy' && !ps5Config.activePlayer) ps5Config.consoleStatus = 'online';
           advanceQueue();
         }
+        await persistStateToKv();
         return sendJson(res, 200, { ok: true });
       }
 
       if (req.method === 'POST' && p === '/api/admin/action') {
+        await syncStateFromKv(true);
         const body = await readJson(req);
         const o = body.orderId ? orders.get(String(body.orderId)) : null;
         switch (body.action) {
@@ -1403,6 +1570,7 @@ async function handler(req, res) {
           default:
             return sendJson(res, 400, { error: 'Ação inválida.' });
         }
+        await persistStateToKv();
         return sendJson(res, 200, { ok: true });
       }
 
@@ -1427,11 +1595,17 @@ async function handler(req, res) {
 }
 
 if (require.main === module) {
-  http.createServer(handler).listen(ENV.PORT, () => {
+  const server = http.createServer(handler);
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  server.listen(ENV.PORT, () => {
     console.log(`[playgta6] Rodando em http://localhost:${ENV.PORT}`);
     console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
     console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado'}`);
+    console.log(`  MP Webhook:    ${ENV.MP_WEBHOOK_SECRET ? 'assinatura verificada' : 'sem segredo (configure MP_WEBHOOK_SECRET)'}`);
+    console.log(`  Estado KV:     ${kvEnabled() ? 'Redis/KV compartilhado ativo' : 'memória local (configure KV_REST_API_URL para Vercel)'}`);
     console.log(`  NOWPayments:   ${npEnabled() ? 'ativo (Crypto automático)' : 'não configurado'}`);
     console.log(`  Modo de teste: ${isDemoMode() ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
