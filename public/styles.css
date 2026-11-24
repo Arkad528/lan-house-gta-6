@@ -1607,3 +1607,9 @@ a {
 .amount-copy-box {
   margin-bottom: 12px;
 }
+
+.choice.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}

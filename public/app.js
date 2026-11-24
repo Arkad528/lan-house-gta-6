@@ -425,12 +425,22 @@
     return Math.round((amount / (1 - feeRate)) * 100) / 100;
   }
 
+  function isCryptoAllowed() {
+    return !(state.pkg === 'trial_10m' && !state.bump);
+  }
+
   function renderPlans() {
     $$('[data-price]').forEach((node) => {
-      const p = PKG[node.dataset.price].price;
-      const shown = isCrypto() ? grossUp(p * (1 - state.cryptoRate), state.npFeeRate) : grossUp(p, state.mpFeeRate);
+      const id = node.dataset.price;
+      const p = PKG[id].price;
+      const useCrypto = isCrypto() && id !== 'trial_10m';
+      const shown = useCrypto ? grossUp(p * (1 - state.cryptoRate), state.npFeeRate) : grossUp(p, state.mpFeeRate);
       node.textContent = money(shown);
     });
+    const trialRate = document.querySelector('.plan[data-pkg="trial_10m"] .plan-rate');
+    if (trialRate) {
+      trialRate.textContent = isCrypto() ? 'Apenas PIX (Crypto a partir de 1h)' : 'R$ 23,04/h';
+    }
     $('toggle-pix').classList.toggle('active', !isCrypto());
     $('toggle-crypto').classList.toggle('active', isCrypto());
 
@@ -513,10 +523,24 @@
   }
 
   function renderCheckout() {
+    const cryptoAllowed = isCryptoAllowed();
+    if (!cryptoAllowed && state.method === 'crypto') {
+      state.method = 'pix';
+    }
     const c = calc();
 
     $$('[data-pick]').forEach((b) => b.classList.toggle('is-active', b.dataset.pick === state.pkg));
-    $$('[data-method-choice]').forEach((l) => l.classList.toggle('is-active', l.dataset.methodChoice === state.method));
+    $$('[data-method-choice]').forEach((l) => {
+      const isCryChoice = l.dataset.methodChoice === 'crypto';
+      l.classList.toggle('is-active', l.dataset.methodChoice === state.method);
+      l.classList.toggle('is-disabled', isCryChoice && !cryptoAllowed);
+      const input = l.querySelector('input');
+      if (input) input.disabled = isCryChoice && !cryptoAllowed;
+      if (isCryChoice) {
+        const sm = l.querySelector('small');
+        if (sm) sm.textContent = cryptoAllowed ? 'USDT, USDC, BTC, ETH, LTC, TRX, BNB, TON' : 'Disponível a partir de 1 hora';
+      }
+    });
     $$('input[name="pay"]').forEach((r) => (r.checked = r.value === state.method));
     $('coins').classList.toggle('hidden', !isCrypto());
     $$('[data-coin]').forEach((b) => b.classList.toggle('is-active', b.dataset.coin === state.coin));

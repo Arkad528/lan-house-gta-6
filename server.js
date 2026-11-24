@@ -489,7 +489,7 @@ async function createNowPaymentsCrypto(req, order) {
     if (r.status === 401 || r.status === 403 || rawMsg.includes('api key')) {
       userMsg = 'Chave da NOWPayments inválida. Verifique NOWPAYMENTS_API_KEY na Vercel.';
     } else if (rawMsg.includes('minimal') || rawMsg.includes('less than') || rawMsg.includes('minimum')) {
-      userMsg = 'Valor abaixo do mínimo aceito por esta rede Crypto. Tente USDT (BEP20/Polygon), SOL, LTC ou pague via PIX.';
+      userMsg = 'Valor abaixo do mínimo aceito por esta rede Crypto. Tente USDT (Polygon/BEP20), LTC, TRX, TON ou pague via PIX.';
     } else if (rawMsg.includes('payout') || rawMsg.includes('wallet') || rawMsg.includes('address')) {
       userMsg = 'Configure sua carteira de recebimento (Outcome Wallet) no painel da NOWPayments.';
     } else if (rawMsg.includes('currency') || rawMsg.includes('estimate') || rawMsg.includes('unavailable')) {
@@ -662,6 +662,12 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
   const baseSubtotal = Math.round((pkg.priceBRL + bumpBase) * 100) / 100;
   const cryptoOpt = resolveCryptoOption(paymentMethod);
   const isCrypto = !!cryptoOpt;
+
+  if (isCrypto && pkg.id === 'trial_10m' && !includeBump) {
+    const err = new Error('Pagamento em Crypto disponível a partir do plano de 1 hora.');
+    err.isSafeUserError = true;
+    throw err;
+  }
 
   const pixSubtotal = grossUp(baseSubtotal, packagesConfig.mpFeeRate);
   let finalPriceBRL;
