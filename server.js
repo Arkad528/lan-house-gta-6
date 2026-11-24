@@ -472,7 +472,20 @@ async function createNowPaymentsCrypto(req, order) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.pay_address) {
     console.error('[playgta6] NOWPayments erro:', r.status, JSON.stringify(data));
-    throw new Error(data.message || 'Erro ao gerar pagamento Crypto na NOWPayments.');
+    const rawMsg = String(data.message || '').toLowerCase();
+    let userMsg = 'Erro ao gerar pagamento Crypto na NOWPayments.';
+    if (r.status === 401 || r.status === 403 || rawMsg.includes('api key')) {
+      userMsg = 'Chave da NOWPayments inválida. Verifique NOWPAYMENTS_API_KEY na Vercel.';
+    } else if (rawMsg.includes('minimal') || rawMsg.includes('less than') || rawMsg.includes('minimum')) {
+      userMsg = 'Valor abaixo do mínimo aceito por esta rede Crypto. Escolha um plano maior (ex: 1h, 2h15 ou 5h) ou pague via PIX.';
+    } else if (rawMsg.includes('payout') || rawMsg.includes('wallet') || rawMsg.includes('address')) {
+      userMsg = 'Configure sua carteira de recebimento (Outcome Wallet) no painel da NOWPayments.';
+    } else if (rawMsg.includes('currency') || rawMsg.includes('estimate') || rawMsg.includes('unavailable')) {
+      userMsg = 'Moeda indisponível para este valor na NOWPayments. Tente outra moeda ou pague via PIX.';
+    }
+    const err = new Error(userMsg);
+    err.isSafeUserError = true;
+    throw err;
   }
 
   return {
@@ -1334,7 +1347,7 @@ async function handler(req, res) {
       'Mercado Pago não retornou o código PIX. Verifique se sua conta tem chave PIX ativa.',
       'Erro ao gerar pagamento Crypto na NOWPayments.'
     ];
-    const msg = safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
+    const msg = err.isSafeUserError || safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
     return sendJson(res, 400, { error: msg });
   }
 }
