@@ -426,7 +426,13 @@ async function syncMercadoPagoPayment(order) {
     const amountOk = Number(data.transaction_amount) >= order.finalPriceBRL - 0.01;
     const refOk = !data.external_reference || String(data.external_reference) === order.orderId;
     if (data.status === 'approved' && amountOk && refOk) {
-      enqueueOrActivate(order);
+      const approvedAt = Date.parse(data.date_approved || data.date_last_updated || '');
+      const sessionMs = order.totalMinutes * 60_000;
+      if (Number.isFinite(approvedAt) && Date.now() - approvedAt > sessionMs) {
+        order.status = 'completed';
+      } else {
+        enqueueOrActivate(order);
+      }
     } else if (data.status === 'cancelled' || data.status === 'rejected') {
       order.status = 'cancelled';
     }
@@ -555,7 +561,13 @@ async function syncNowPaymentsPayment(order) {
     const refOk = !data.order_id || String(data.order_id) === order.orderId;
     const amountOk = Number(data.price_amount || 0) >= order.finalPriceBRL - 0.05;
     if ((data.payment_status === 'finished' || data.payment_status === 'confirmed') && refOk && amountOk) {
-      enqueueOrActivate(order);
+      const paidAt = Date.parse(data.updated_at || data.created_at || '');
+      const sessionMs = order.totalMinutes * 60_000;
+      if (Number.isFinite(paidAt) && Date.now() - paidAt > sessionMs) {
+        order.status = 'completed';
+      } else {
+        enqueueOrActivate(order);
+      }
     } else if (['failed', 'refunded', 'expired'].includes(data.payment_status)) {
       order.status = 'expired';
     }
