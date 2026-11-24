@@ -758,6 +758,7 @@ function publicOrder(o) {
     orderId: o.orderId,
     orderToken: issueOrderToken(o),
     status: o.status,
+    expiresAt: Date.parse(o.createdAt) + 30 * 60_000,
     packageName: o.packageName,
     totalMinutes: o.totalMinutes,
     finalPriceBRL: o.finalPriceBRL,

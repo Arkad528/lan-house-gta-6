@@ -54,6 +54,7 @@
     pub: null,
     order: null,
     pollTimer: null,
+    countdownTimer: null,
     soundAlertEnabled: false,
     soundPromptDismissed: false,
     audioCtx: null,
@@ -113,10 +114,45 @@
   function closeModal(id) {
     $(id).classList.add('hidden');
     if (!document.querySelector('.modal:not(.hidden)')) document.body.classList.remove('modal-open');
-    // Mantém o polling rodando em segundo plano se o jogador ativou o aviso sonoro na fila!
-    if (id === 'order-modal' && !(state.order && state.order.status === 'queued' && state.soundAlertEnabled)) {
-      stopPolling();
+    if (id === 'order-modal') {
+      stopCountdown();
+      // Mantém o polling rodando em segundo plano se o jogador ativou o aviso sonoro na fila!
+      if (!(state.order && state.order.status === 'queued' && state.soundAlertEnabled)) {
+        stopPolling();
+      }
     }
+  }
+
+  function stopCountdown() {
+    clearInterval(state.countdownTimer);
+    state.countdownTimer = null;
+  }
+
+  function startCountdown(expiresAt) {
+    stopCountdown();
+    const box = $('o-countdown');
+    const timeEl = $('o-countdown-time');
+    if (!box || !timeEl) return;
+    const deadline = Number(expiresAt) || Date.now() + 30 * 60_000;
+
+    const tick = () => {
+      const leftSec = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+      const m = Math.floor(leftSec / 60);
+      const s = leftSec % 60;
+      timeEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      box.classList.toggle('is-warn', leftSec > 60 && leftSec <= 300);
+      box.classList.toggle('is-urgent', leftSec <= 60);
+
+      if (leftSec <= 0) {
+        stopCountdown();
+        if (state.order && state.order.status === 'pending') {
+          updateOrderStatus({ status: 'expired' });
+        }
+      }
+    };
+
+    tick();
+    state.countdownTimer = setInterval(tick, 1000);
   }
 
   // ---------------------------------------------------------------- som de alerta (Web Audio API)
@@ -643,8 +679,10 @@
         spinner.classList.remove('hidden');
         title.textContent = 'Aguardando confirmação';
         text.textContent = 'Assim que o pagamento for confirmado, seu acesso aparece aqui automaticamente.';
+        startCountdown(state.order.expiresAt);
         break;
       case 'queued':
+        stopCountdown();
         pill.className = 'pill pill-cyan';
         pill.textContent = `Na fila · #${o.queuePosition}`;
         spinner.classList.remove('hidden');
@@ -652,6 +690,7 @@
         text.textContent = `Você é o #${o.queuePosition} da fila. Previsão: ~${o.estimatedWaitMinutes} min. Seu tempo só começa quando o controle for liberado.`;
         break;
       case 'active':
+        stopCountdown();
         pill.className = 'pill pill-green';
         pill.textContent = 'Controle liberado';
         title.textContent = 'É a sua vez!';
@@ -666,6 +705,7 @@
         }
         break;
       case 'completed':
+        stopCountdown();
         pill.className = 'pill';
         pill.textContent = 'Sessão encerrada';
         title.textContent = 'Obrigado por jogar!';
@@ -674,6 +714,7 @@
         break;
       case 'expired':
       case 'cancelled':
+        stopCountdown();
         pill.className = 'pill pill-red';
         pill.textContent = o.status === 'expired' ? 'Expirado' : 'Cancelado';
         title.textContent = o.status === 'expired' ? 'Pagamento não identificado' : 'Pedido cancelado';
