@@ -1444,3 +1444,50 @@ a {
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
+
+/* Emergência no /admin */
+.admin-top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.emergency-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: rgba(255, 71, 105, 0.14);
+  border: 1.5px solid rgba(255, 71, 105, 0.55);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+
+.emergency-banner strong {
+  display: block;
+  font-size: 0.88rem;
+  color: #ff9cb0;
+}
+
+.emergency-banner small {
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+
+.emg-title {
+  margin-top: 8px;
+}
+
+.emg-sub {
+  margin-bottom: 4px;
+}
+
+.emg-list {
+  margin-bottom: 10px;
+}
+
+.emg-bump {
+  margin-bottom: 4px;
+}

@@ -59,6 +59,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 // ---------------------------------------------------------------------------
 const ps5Config = {
   consoleStatus: 'online', // online | busy | maintenance
+  emergencyOffline: false,
   ps5LocalIp: '192.168.1.150',
   remotePlayPin: '48291033',
   connectionMode: 'parsec_chiaki',
@@ -714,7 +715,8 @@ async function handler(req, res) {
         cryptoDiscountRate: packagesConfig.cryptoDiscountRate,
         usdtRateBRL: packagesConfig.usdtRateBRL,
         ps5Public: {
-          consoleStatus: ps5Config.consoleStatus,
+          consoleStatus: ps5Config.emergencyOffline ? 'maintenance' : ps5Config.consoleStatus,
+          emergencyOffline: ps5Config.emergencyOffline,
           streamSourceUrl: ps5Config.streamSourceUrl,
           streamTitle: ps5Config.streamTitle,
           viewersCount: Math.max(1, viewers.size),
@@ -725,6 +727,7 @@ async function handler(req, res) {
     }
 
     if (req.method === 'POST' && p === '/api/checkout') {
+      if (ps5Config.emergencyOffline) return sendJson(res, 503, { error: 'Sistema desligado em modo de emergência. Tente mais tarde.' });
       if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
       if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
       if (!checkoutLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitos pedidos seguidos. Aguarde um pouco.' });
@@ -937,6 +940,32 @@ async function handler(req, res) {
               if (qo) qo.status = 'cancelled';
             });
             ps5Config.queue = [];
+            break;
+          case 'emergency_shutdown':
+            ps5Config.emergencyOffline = true;
+            ps5Config.consoleStatus = 'maintenance';
+            if (ps5Config.activePlayer) {
+              const ao = orders.get(ps5Config.activePlayer.orderId);
+              if (ao) ao.status = 'cancelled';
+              ps5Config.activePlayer = null;
+            }
+            ps5Config.queue.forEach((q) => {
+              const qo = orders.get(q.orderId);
+              if (qo) qo.status = 'cancelled';
+            });
+            ps5Config.queue = [];
+            if (body.stopProcess === true && !process.env.VERCEL) {
+              sendJson(res, 200, { ok: true, stoppingProcess: true });
+              setTimeout(() => {
+                console.warn('[viceplay] Desligamento de emergência acionado pelo /admin.');
+                process.exit(0);
+              }, 350);
+              return;
+            }
+            break;
+          case 'emergency_restore':
+            ps5Config.emergencyOffline = false;
+            ps5Config.consoleStatus = 'online';
             break;
           default:
             return sendJson(res, 400, { error: 'Ação inválida.' });

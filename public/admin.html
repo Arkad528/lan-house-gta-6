@@ -54,7 +54,19 @@
           <span class="eyebrow">Central de Controle</span>
           <h1>Configuração do PS5 & Fila</h1>
         </div>
-        <button type="button" class="btn btn-primary btn-lg" id="btn-save">Salvar alterações</button>
+        <div class="admin-top-actions">
+          <button type="button" class="btn btn-danger btn-lg" id="btn-open-emergency">Desligar de emergência</button>
+          <button type="button" class="btn btn-primary btn-lg" id="btn-save">Salvar alterações</button>
+        </div>
+      </div>
+
+      <!-- Banner exibido quando o desligamento de emergência está ativo -->
+      <div class="emergency-banner hidden" id="emergency-banner">
+        <div>
+          <strong>MODO DE EMERGÊNCIA ATIVO — SISTEMA DESLIGADO</strong>
+          <small>Sessões encerradas, fila limpa e novos pagamentos bloqueados no site.</small>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" data-action="emergency_restore">Religar sistema</button>
       </div>
 
       <div class="oauth-status" id="oauth-status"></div>
@@ -226,6 +238,60 @@
       </div>
     </section>
   </main>
+
+  <!-- Modal de Dupla Confirmação — Desligamento de Emergência -->
+  <div class="modal hidden" id="emergency-modal" role="dialog" aria-modal="true" aria-labelledby="emg-title">
+    <div class="modal-card modal-sm">
+      <div class="modal-head">
+        <div>
+          <span class="pill pill-red">Emergência</span>
+          <h3 id="emg-title" class="emg-title">Desligar sistema agora?</h3>
+        </div>
+        <button type="button" class="icon-btn" id="btn-emg-close" aria-label="Fechar">✕</button>
+      </div>
+
+      <!-- Passo 1 de 2 -->
+      <div id="emg-step-1" class="stack">
+        <p class="card-sub emg-sub">
+          Esta ação de emergência vai imediatamente:
+        </p>
+        <ul class="plan-features emg-list">
+          <li>Derrubar o jogador atual do PS5</li>
+          <li>Cancelar e limpar toda a fila de espera</li>
+          <li>Bloquear novos pagamentos e checkouts no site</li>
+        </ul>
+        <button type="button" class="btn btn-danger btn-block btn-lg" id="btn-emg-next">
+          Continuar (Confirmação 1 de 2)
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" id="btn-emg-cancel-1">Cancelar</button>
+      </div>
+
+      <!-- Passo 2 de 2 -->
+      <div id="emg-step-2" class="stack hidden">
+        <p class="card-sub emg-sub">
+          Confirmação final (2 de 2): digite <strong>DESLIGAR</strong> abaixo para confirmar.
+        </p>
+        <input
+          type="text"
+          id="emg-confirm-input"
+          class="input input-mono"
+          placeholder="Digite DESLIGAR"
+          autocomplete="off"
+        />
+        <label class="bump emg-bump" for="emg-stop-process">
+          <input type="checkbox" id="emg-stop-process" />
+          <div class="bump-body">
+            <strong>Também encerrar o servidor local (Node.js)</strong>
+            <small>Opcional: fecha o processo do PC completamente. Desmarcado = trava o site e permite religar pelo /admin.</small>
+          </div>
+        </label>
+        <button type="button" class="btn btn-danger btn-block btn-lg" id="btn-emg-confirm" disabled>
+          CONFIRMAR DESLIGAMENTO
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" id="btn-emg-back">Voltar</button>
+      </div>
+    </div>
+  </div>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 

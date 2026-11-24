@@ -94,6 +94,9 @@
     $('cfg-btc').value = c.walletBtc || '';
     $('cfg-sol').value = c.walletSol || '';
 
+    // Banner de emergência
+    $('emergency-banner').classList.toggle('hidden', !c.emergencyOffline);
+
     // Status OAuth e Pagamento
     const oauthBox = $('oauth-status');
     oauthBox.replaceChildren(
@@ -199,18 +202,44 @@
     }
   }
 
-  async function runAction(action, orderId) {
+  async function runAction(action, orderId, extra) {
     const { ok, data } = await req('/api/admin/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, orderId })
+      body: JSON.stringify({ action, orderId, ...(extra || {}) })
     });
     if (ok) {
-      toast('Ação executada!', 'success');
+      if (data.stoppingProcess) {
+        toast('Servidor encerrado em modo de emergência.', 'error');
+        return;
+      }
+      toast(
+        action === 'emergency_shutdown'
+          ? 'Sistema desligado em modo de emergência!'
+          : action === 'emergency_restore'
+          ? 'Sistema religado e online!'
+          : 'Ação executada!',
+        action === 'emergency_shutdown' ? 'error' : 'success'
+      );
       loadState();
     } else {
       toast(data.error || 'Erro ao executar ação.', 'error');
     }
+  }
+
+  function openEmergencyModal() {
+    $('emg-step-1').classList.remove('hidden');
+    $('emg-step-2').classList.add('hidden');
+    $('emg-confirm-input').value = '';
+    $('emg-stop-process').checked = false;
+    $('btn-emg-confirm').disabled = true;
+    $('emergency-modal').classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeEmergencyModal() {
+    $('emergency-modal').classList.add('hidden');
+    document.body.classList.remove('modal-open');
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -244,6 +273,32 @@
     document.querySelectorAll('[data-action]').forEach((b) =>
       b.addEventListener('click', () => runAction(b.dataset.action))
     );
+
+    // Dupla confirmação do Desligamento de Emergência
+    $('btn-open-emergency').addEventListener('click', openEmergencyModal);
+    $('btn-emg-close').addEventListener('click', closeEmergencyModal);
+    $('btn-emg-cancel-1').addEventListener('click', closeEmergencyModal);
+    $('emergency-modal').addEventListener('mousedown', (e) => {
+      if (e.target === $('emergency-modal')) closeEmergencyModal();
+    });
+    $('btn-emg-next').addEventListener('click', () => {
+      $('emg-step-1').classList.add('hidden');
+      $('emg-step-2').classList.remove('hidden');
+      $('emg-confirm-input').focus();
+    });
+    $('btn-emg-back').addEventListener('click', () => {
+      $('emg-step-2').classList.add('hidden');
+      $('emg-step-1').classList.remove('hidden');
+    });
+    $('emg-confirm-input').addEventListener('input', (e) => {
+      $('btn-emg-confirm').disabled = e.target.value.trim().toUpperCase() !== 'DESLIGAR';
+    });
+    $('btn-emg-confirm').addEventListener('click', async () => {
+      if ($('emg-confirm-input').value.trim().toUpperCase() !== 'DESLIGAR') return;
+      const stopProcess = $('emg-stop-process').checked;
+      closeEmergencyModal();
+      await runAction('emergency_shutdown', null, { stopProcess });
+    });
 
     setInterval(() => {
       if (token && !document.hidden) loadState();

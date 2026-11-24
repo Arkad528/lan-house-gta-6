@@ -178,6 +178,18 @@
     const list = $('queue-list');
     const note = $('checkout-queue-note');
 
+    if (pub.emergencyOffline) {
+      $('stat-player').textContent = 'Sistema desligado';
+      badge.textContent = 'Fora do ar';
+      badge.className = 'pill pill-red';
+      $('queue-headline').textContent = 'Sistema temporariamente desligado.';
+      $('queue-sub').textContent = 'Novos acessos e pagamentos estão pausados no momento.';
+      $('queue-wait').textContent = 'Pausado';
+      note.textContent = 'Sistema temporariamente desligado.';
+      list.classList.add('hidden');
+      return;
+    }
+
     if (pub.consoleStatus === 'maintenance') {
       $('stat-player').textContent = 'Em manutenção';
       badge.textContent = 'Manutenção';
