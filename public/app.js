@@ -5,7 +5,7 @@
   const $$ = (sel) => document.querySelectorAll(sel);
 
   const PKG = {
-    trial_10m: { name: 'Teste Rápido (10 min)', short: '10 min', minutes: 10, bonus: 0, price: 0.1 },
+    trial_10m: { name: 'Teste Rápido (10 min)', short: '10 min', minutes: 10, bonus: 0, price: 3.8 },
     hour_1h: { name: 'Sessão 1 Hora', short: '1 hora', minutes: 60, bonus: 0, price: 22.75 },
     combo_2h: { name: 'Combo Heist Leonida (2h15)', short: '2h15', minutes: 120, bonus: 15, price: 44.9 },
     pass_4h: { name: 'Passaporte Madrugada (5h)', short: '5 horas', minutes: 240, bonus: 60, price: 86.9 }
