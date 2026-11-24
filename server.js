@@ -41,12 +41,19 @@ const ENV = {
   MP_PUBLIC_KEY: process.env.MP_PUBLIC_KEY || '',
   NOWPAYMENTS_API_KEY: process.env.NOWPAYMENTS_API_KEY || '',
   NOWPAYMENTS_IPN_SECRET: process.env.NOWPAYMENTS_IPN_SECRET || '',
-  DEMO_MODE: process.env.DEMO_MODE !== 'false',
+  DEMO_MODE_RAW: process.env.DEMO_MODE,
   TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
 };
 
 const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
 const npEnabled = () => !!ENV.NOWPAYMENTS_API_KEY;
+// Modo de teste fica DESLIGADO automaticamente se Mercado Pago ou NOWPayments estiverem ativos (a menos que DEMO_MODE=true explícito)
+const isDemoMode = () => {
+  if (ENV.DEMO_MODE_RAW === 'false') return false;
+  if (ENV.DEMO_MODE_RAW === 'true') return true;
+  if (mpEnabled() || npEnabled()) return false;
+  return !process.env.VERCEL && !process.env.RENDER;
+};
 
 let SECRET = process.env.SESSION_SECRET || '';
 if (!SECRET) {
@@ -141,7 +148,15 @@ function parseCookies(req) {
   const out = {};
   for (const part of String(req.headers.cookie || '').split(';')) {
     const idx = part.indexOf('=');
-    if (idx > 0) out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+    if (idx > 0) {
+      const k = part.slice(0, idx).trim();
+      const raw = part.slice(idx + 1).trim();
+      try {
+        out[k] = decodeURIComponent(raw);
+      } catch {
+        out[k] = raw;
+      }
+    }
   }
   return out;
 }
@@ -208,6 +223,7 @@ function makeLimiter(windowMs, max) {
   }, windowMs).unref();
   return (key) => {
     const now = Date.now();
+    if (hits.size > 10000) hits.clear();
     const rec = hits.get(key);
     if (!rec || now - rec.start > windowMs) {
       hits.set(key, { start: now, count: 1 });
@@ -345,7 +361,9 @@ async function syncMercadoPagoPayment(order) {
     });
     if (!r.ok) return;
     const data = await r.json();
-    if (data.status === 'approved') {
+    const amountOk = Number(data.transaction_amount) >= order.finalPriceBRL - 0.01;
+    const refOk = !data.external_reference || String(data.external_reference) === order.orderId;
+    if (data.status === 'approved' && amountOk && refOk) {
       enqueueOrActivate(order);
     } else if (data.status === 'cancelled' || data.status === 'rejected') {
       order.status = 'cancelled';
@@ -416,7 +434,9 @@ async function syncNowPaymentsPayment(order) {
     });
     if (!r.ok) return;
     const data = await r.json();
-    if (data.payment_status === 'finished' || data.payment_status === 'confirmed') {
+    const refOk = !data.order_id || String(data.order_id) === order.orderId;
+    const amountOk = Number(data.price_amount || 0) >= order.finalPriceBRL - 0.05;
+    if ((data.payment_status === 'finished' || data.payment_status === 'confirmed') && refOk && amountOk) {
       enqueueOrActivate(order);
     } else if (['failed', 'refunded', 'expired'].includes(data.payment_status)) {
       order.status = 'expired';
@@ -703,6 +723,7 @@ async function oauthCallback(req, res, provider, query) {
 // ---------------------------------------------------------------------------
 function securityHeaders(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader(
@@ -780,6 +801,8 @@ async function handler(req, res) {
     }
 
     if (req.method === 'POST' && p === '/auth/logout') {
+      const origin = req.headers.origin;
+      if (origin && origin !== getBaseUrl(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       setCookie(req, res, 'vp_session', '', 0);
       return sendJson(res, 200, { ok: true });
     }
@@ -788,14 +811,14 @@ async function handler(req, res) {
       return sendJson(res, 200, {
         user: user ? { name: user.name, handle: user.handle, avatar: user.avatar, provider: user.provider } : null,
         providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
-        demoMode: ENV.DEMO_MODE
+        demoMode: isDemoMode()
       });
     }
 
     // ---------------- Público ----------------
     if (req.method === 'GET' && p === '/api/config') {
       const cid = url.searchParams.get('cid');
-      if (cid && /^[a-z0-9]{8,32}$/.test(cid)) viewers.set(cid, Date.now());
+      if (cid && /^[a-z0-9]{8,32}$/.test(cid) && viewers.size < 5000) viewers.set(cid, Date.now());
       const ap = ps5Config.activePlayer;
       return sendJson(res, 200, {
         csrfToken: issueCsrf(),
@@ -913,7 +936,8 @@ async function handler(req, res) {
               target = orders.get(String(mpData.external_reference || ''));
               if (target) {
                 target.mpPaymentId = mpId;
-                if (mpData.status === 'approved') enqueueOrActivate(target);
+                const amountOk = Number(mpData.transaction_amount) >= target.finalPriceBRL - 0.01;
+                if (mpData.status === 'approved' && amountOk) enqueueOrActivate(target);
                 else if (mpData.status === 'cancelled' || mpData.status === 'rejected') target.status = 'cancelled';
               }
             }
@@ -930,7 +954,7 @@ async function handler(req, res) {
 
     // Simulação de pagamento: só em modo de teste e só para o dono do pedido
     if (req.method === 'POST' && p === '/api/demo/confirm') {
-      if (!ENV.DEMO_MODE) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
+      if (!isDemoMode()) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
       if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf' });
       if (!user) return sendJson(res, 401, { error: 'login' });
       const body = await readJson(req);
@@ -965,7 +989,7 @@ async function handler(req, res) {
           mpPublicKey: ENV.MP_PUBLIC_KEY,
           nowPayments: npEnabled(),
           nowPaymentsIpnConfigured: !!ENV.NOWPAYMENTS_IPN_SECRET,
-          demoMode: ENV.DEMO_MODE
+          demoMode: isDemoMode()
         });
       }
 
@@ -1111,7 +1135,9 @@ async function handler(req, res) {
     return sendJson(res, 405, { error: 'Método não permitido.' });
   } catch (err) {
     console.error('[viceplay] Erro:', err.message);
-    return sendJson(res, 400, { error: err.message || 'Erro inesperado.' });
+    const safeErrors = ['Payload muito grande', 'JSON inválido', 'Selecione um pacote válido.'];
+    const msg = safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
+    return sendJson(res, 400, { error: msg });
   }
 }
 
@@ -1122,7 +1148,7 @@ if (require.main === module) {
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
     console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado (BR Code manual)'}`);
     console.log(`  NOWPayments:   ${npEnabled() ? 'ativo (Crypto automático)' : 'não configurado (carteiras manuais)'}`);
-    console.log(`  Modo de teste: ${ENV.DEMO_MODE ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
+    console.log(`  Modo de teste: ${isDemoMode() ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
 }
 
