@@ -1,10 +1,10 @@
 'use strict';
 /**
- * viceplay.cloud — Lan House Digital PS5 (GTA VI)
+ * playgta6 — Lan House Digital PS5 (GTA VI)
  * - Login real via OAuth2 (Discord e Google), sessão em cookie HttpOnly assinado (HMAC-SHA256)
  * - Fila FIFO em tempo real, preços validados 100% no servidor
- * - PIX "copia e cola" válido (padrão EMV/BR Code com CRC16)
- * - Painel /admin com proteção contra força bruta
+ * - PIX (Mercado Pago + BR Code) e Crypto (NOWPayments)
+ * - Painel /admin com proteção contra força bruta e desligamento de emergência
  * Sem dependências externas (Node 18+).
  */
 
@@ -58,7 +58,7 @@ const isDemoMode = () => {
 let SECRET = process.env.SESSION_SECRET || '';
 if (!SECRET) {
   SECRET = crypto.randomBytes(32).toString('hex');
-  console.warn('[viceplay] SESSION_SECRET não definido: usando segredo temporário (logins caem ao reiniciar).');
+  console.warn('[playgta6] SESSION_SECRET não definido: usando segredo temporário (logins caem ao reiniciar).');
 }
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -73,14 +73,14 @@ const ps5Config = {
   ps5LocalIp: '192.168.1.150',
   remotePlayPin: '48291033',
   connectionMode: 'parsec_chiaki',
-  parsecInviteUrl: 'https://parsec.gg/g/viceplay-cloud-ps5',
+  parsecInviteUrl: 'https://parsec.gg/g/playgta6-ps5',
   streamMode: 'youtube',
   streamSourceUrl: 'https://www.youtube.com/embed/QdBZY2fkU-0?autoplay=1&mute=1&loop=1&playlist=QdBZY2fkU-0&controls=1&rel=0',
   streamTitle: 'Sessão GTA VI • PS5 #01',
   activePlayer: null, // { orderId, uid, name, totalMinutes, remainingSeconds, startedAt }
   queue: [], // [{ orderId, uid, name, totalMinutes, joinedAt }]
-  pixKey: 'pix@viceplay.cloud',
-  pixName: 'VICEPLAY CLOUD',
+  pixKey: 'pix@playgta6.com',
+  pixName: 'PLAYGTA6',
   pixCity: 'SAO PAULO',
   walletUsdt: '0x71C89A4B29F10cE9824F1B3bA91820E77c9f2A1',
   walletBtc: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
@@ -239,7 +239,7 @@ const adminLoginLimiter = makeLimiter(15 * 60_000, 8);
 const checkoutLimiter = makeLimiter(60_000, 10);
 
 function getSessionUser(req) {
-  const data = unsign(parseCookies(req).vp_session, 'sess');
+  const data = unsign(parseCookies(req).pg6_session, 'sess');
   return data ? data.u : null;
 }
 
@@ -289,7 +289,7 @@ function buildPixPayload(amount, txid) {
     emv('53', '986') +
     emv('54', amount.toFixed(2)) +
     emv('58', 'BR') +
-    emv('59', asciiUpper(ps5Config.pixName, 25) || 'VICEPLAY') +
+    emv('59', asciiUpper(ps5Config.pixName, 25) || 'PLAYGTA6') +
     emv('60', asciiUpper(ps5Config.pixCity, 15) || 'SAO PAULO') +
     emv('62', emv('05', txid.replace(/[^A-Za-z0-9]/g, '').slice(0, 25) || '***')) +
     '6304';
@@ -303,13 +303,13 @@ async function createMercadoPagoPix(req, order, user) {
   const payerEmail =
     user.handle && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.handle)
       ? user.handle
-      : `player.${order.orderId.toLowerCase()}@viceplay.cloud`;
+      : `player.${order.orderId.toLowerCase()}@playgta6.com`;
 
   const expires = new Date(Date.now() + 30 * 60_000).toISOString();
   const baseUrl = getBaseUrl(req);
   const body = {
     transaction_amount: Number(order.finalPriceBRL.toFixed(2)),
-    description: `viceplay.cloud - ${order.packageName}`,
+    description: `playgta6 - ${order.packageName}`,
     payment_method_id: 'pix',
     external_reference: order.orderId,
     date_of_expiration: expires,
@@ -336,7 +336,7 @@ async function createMercadoPagoPix(req, order, user) {
 
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    console.error('[viceplay] Mercado Pago erro:', r.status, JSON.stringify(data));
+    console.error('[playgta6] Mercado Pago erro:', r.status, JSON.stringify(data));
     throw new Error(data.message || 'Erro ao gerar PIX no Mercado Pago.');
   }
 
@@ -369,7 +369,7 @@ async function syncMercadoPagoPayment(order) {
       order.status = 'cancelled';
     }
   } catch (err) {
-    console.error('[viceplay] Falha ao consultar Mercado Pago:', err.message);
+    console.error('[playgta6] Falha ao consultar Mercado Pago:', err.message);
   }
 }
 
@@ -390,7 +390,7 @@ async function createNowPaymentsCrypto(req, order) {
     price_currency: 'brl',
     pay_currency: payCurrency,
     order_id: order.orderId,
-    order_description: `viceplay.cloud - ${order.packageName}`
+    order_description: `playgta6 - ${order.packageName}`
   };
 
   if (baseUrl.startsWith('https://') && !baseUrl.includes('localhost')) {
@@ -409,7 +409,7 @@ async function createNowPaymentsCrypto(req, order) {
 
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.pay_address) {
-    console.error('[viceplay] NOWPayments erro:', r.status, JSON.stringify(data));
+    console.error('[playgta6] NOWPayments erro:', r.status, JSON.stringify(data));
     throw new Error(data.message || 'Erro ao gerar pagamento Crypto na NOWPayments.');
   }
 
@@ -442,7 +442,7 @@ async function syncNowPaymentsPayment(order) {
       order.status = 'expired';
     }
   } catch (err) {
-    console.error('[viceplay] Falha ao consultar NOWPayments:', err.message);
+    console.error('[playgta6] Falha ao consultar NOWPayments:', err.message);
   }
 }
 
@@ -663,7 +663,7 @@ function oauthStart(req, res, provider) {
   if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
   const cfg = OAUTH[provider];
   const state = crypto.randomBytes(16).toString('hex');
-  setCookie(req, res, 'vp_oauth', sign({ t: 'oauth', s: state, p: provider, exp: Date.now() + 10 * 60_000 }), 600);
+  setCookie(req, res, 'pg6_oauth', sign({ t: 'oauth', s: state, p: provider, exp: Date.now() + 10 * 60_000 }), 600);
   const params = new URLSearchParams({
     client_id: cfg.clientId(),
     redirect_uri: `${getBaseUrl(req)}/auth/${provider}/callback`,
@@ -677,8 +677,8 @@ function oauthStart(req, res, provider) {
 
 async function oauthCallback(req, res, provider, query) {
   const cfg = OAUTH[provider];
-  const saved = unsign(parseCookies(req).vp_oauth, 'oauth');
-  setCookie(req, res, 'vp_oauth', '', 0);
+  const saved = unsign(parseCookies(req).pg6_oauth, 'oauth');
+  setCookie(req, res, 'pg6_oauth', '', 0);
 
   if (query.get('error')) return redirect(res, '/?auth_error=cancelled');
   if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
@@ -710,10 +710,10 @@ async function oauthCallback(req, res, provider, query) {
       handle: clip(profile.handle, 80),
       avatar: profile.avatar && /^https:\/\//.test(profile.avatar) ? profile.avatar : null
     };
-    setCookie(req, res, 'vp_session', sign({ t: 'sess', u: user, exp: Date.now() + SESSION_TTL_MS }), SESSION_TTL_MS / 1000);
+    setCookie(req, res, 'pg6_session', sign({ t: 'sess', u: user, exp: Date.now() + SESSION_TTL_MS }), SESSION_TTL_MS / 1000);
     redirect(res, '/?login=ok');
   } catch (err) {
-    console.error('[viceplay] Falha no OAuth:', err.message);
+    console.error('[playgta6] Falha no OAuth:', err.message);
     redirect(res, '/?auth_error=failed');
   }
 }
@@ -803,7 +803,7 @@ async function handler(req, res) {
     if (req.method === 'POST' && p === '/auth/logout') {
       const origin = req.headers.origin;
       if (origin && origin !== getBaseUrl(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
-      setCookie(req, res, 'vp_session', '', 0);
+      setCookie(req, res, 'pg6_session', '', 0);
       return sendJson(res, 200, { ok: true });
     }
 
@@ -849,7 +849,7 @@ async function handler(req, res) {
 
       const body = await readJson(req);
       const calc = calculateOrder(String(body.packageId || ''), body.includeBump === true, String(body.paymentMethod || 'pix'));
-      const orderId = `VP${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const orderId = `PG6${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       const order = {
         orderId,
         createdAt: new Date().toISOString(),
@@ -942,7 +942,7 @@ async function handler(req, res) {
               }
             }
           } catch (err) {
-            console.error('[viceplay] Webhook MP erro:', err.message);
+            console.error('[playgta6] Webhook MP erro:', err.message);
           }
         } else {
           target.lastMpCheck = 0;
@@ -1112,7 +1112,7 @@ async function handler(req, res) {
             if (body.stopProcess === true && !process.env.VERCEL) {
               sendJson(res, 200, { ok: true, stoppingProcess: true });
               setTimeout(() => {
-                console.warn('[viceplay] Desligamento de emergência acionado pelo /admin.');
+                console.warn('[playgta6] Desligamento de emergência acionado pelo /admin.');
                 process.exit(0);
               }, 350);
               return;
@@ -1134,7 +1134,7 @@ async function handler(req, res) {
     if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p);
     return sendJson(res, 405, { error: 'Método não permitido.' });
   } catch (err) {
-    console.error('[viceplay] Erro:', err.message);
+    console.error('[playgta6] Erro:', err.message);
     const safeErrors = ['Payload muito grande', 'JSON inválido', 'Selecione um pacote válido.'];
     const msg = safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
     return sendJson(res, 400, { error: msg });
@@ -1143,7 +1143,7 @@ async function handler(req, res) {
 
 if (require.main === module) {
   http.createServer(handler).listen(ENV.PORT, () => {
-    console.log(`[viceplay.cloud] Rodando em http://localhost:${ENV.PORT}`);
+    console.log(`[playgta6] Rodando em http://localhost:${ENV.PORT}`);
     console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
     console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado (BR Code manual)'}`);

@@ -1,7 +1,7 @@
 {
-  "name": "viceplay-cloud",
+  "name": "playgta6",
   "version": "2.0.0",
-  "description": "viceplay.cloud - Lan House Digital PS5 GTA VI com OAuth2 (Discord/Google), PIX BR Code, Crypto, Fila FIFO e Painel Admin",
+  "description": "playgta6 - Lan House Digital PS5 GTA VI com OAuth2 (Discord/Google), Mercado Pago PIX, NOWPayments Crypto, Fila FIFO e Painel Admin",
   "main": "server.js",
   "engines": {
     "node": ">=18.0.0"

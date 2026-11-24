@@ -26,7 +26,7 @@
     failed: 'Não foi possível concluir o login. Tente novamente.'
   };
 
-  const STORAGE_PENDING = 'vp_after_login';
+  const STORAGE_PENDING = 'pg6_after_login';
 
   const state = {
     csrf: null,
@@ -46,10 +46,10 @@
   };
 
   const clientId = (() => {
-    let id = sessionStorage.getItem('vp_cid');
+    let id = sessionStorage.getItem('pg6_cid');
     if (!id || !/^[a-z0-9]{8,32}$/.test(id)) {
       id = (Math.random().toString(36).slice(2, 12) + Date.now().toString(36)).slice(0, 24);
-      sessionStorage.setItem('vp_cid', id);
+      sessionStorage.setItem('pg6_cid', id);
     }
     return id;
   })();

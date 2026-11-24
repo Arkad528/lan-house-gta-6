@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  let token = sessionStorage.getItem('vp_admin_token') || null;
+  let token = sessionStorage.getItem('pg6_admin_token') || null;
   let toastTimer = null;
 
   function toast(msg, type) {
@@ -53,7 +53,7 @@
     if (!token) return showLogin();
     const { ok, data } = await req('/api/admin/state');
     if (!ok) {
-      sessionStorage.removeItem('vp_admin_token');
+      sessionStorage.removeItem('pg6_admin_token');
       token = null;
       return showLogin();
     }
@@ -274,12 +274,12 @@
         return;
       }
       token = data.adminToken;
-      sessionStorage.setItem('vp_admin_token', token);
+      sessionStorage.setItem('pg6_admin_token', token);
       loadState();
     });
 
     $('btn-admin-logout').addEventListener('click', () => {
-      sessionStorage.removeItem('vp_admin_token');
+      sessionStorage.removeItem('pg6_admin_token');
       token = null;
       showLogin();
     });
