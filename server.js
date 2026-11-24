@@ -658,12 +658,35 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
   };
 }
 
+function issueOrderToken(o) {
+  return sign({
+    t: 'ord',
+    id: o.orderId,
+    uid: o.uid,
+    un: o.userName,
+    uh: o.userHandle,
+    up: o.userProvider,
+    mpId: o.mpPaymentId || null,
+    npId: o.npPaymentId || null,
+    pkg: o.packageId,
+    pn: o.packageName,
+    tm: o.totalMinutes,
+    brl: o.finalPriceBRL,
+    usdt: o.finalUSDT,
+    pm: o.paymentMethod,
+    cr: o.isCrypto,
+    ps: o.pixSource || null,
+    exp: Date.now() + 2 * 60 * 60 * 1000
+  });
+}
+
 function publicOrder(o) {
   const queueIdx = ps5Config.queue.findIndex((q) => q.orderId === o.orderId);
   const summary = queueSummary(true);
   const isActive = o.status === 'active' && ps5Config.activePlayer?.orderId === o.orderId;
   return {
     orderId: o.orderId,
+    orderToken: issueOrderToken(o),
     status: o.status,
     packageName: o.packageName,
     totalMinutes: o.totalMinutes,
@@ -1000,7 +1023,39 @@ async function handler(req, res) {
 
     if (req.method === 'GET' && p === '/api/order') {
       if (!user) return sendJson(res, 401, { error: 'login' });
-      const o = orders.get(String(url.searchParams.get('id') || ''));
+      const id = String(url.searchParams.get('id') || '');
+      let o = orders.get(id);
+
+      // Rehidrata pedido a partir do token assinado HMAC (resolve múltiplas instâncias serverless na Vercel!)
+      if (!o) {
+        const tok = unsign(url.searchParams.get('ot') || '', 'ord');
+        if (tok && tok.id === id && tok.uid === user.uid) {
+          o = {
+            orderId: tok.id,
+            createdAt: new Date().toISOString(),
+            uid: tok.uid,
+            userName: tok.un || user.name,
+            userHandle: tok.uh || user.handle,
+            userProvider: tok.up || user.provider,
+            status: 'pending',
+            packageId: tok.pkg,
+            packageName: tok.pn,
+            totalMinutes: tok.tm,
+            finalPriceBRL: tok.brl,
+            finalUSDT: tok.usdt,
+            paymentMethod: tok.pm,
+            isCrypto: !!tok.cr,
+            pixSource: tok.ps || null,
+            mpPaymentId: tok.mpId || null,
+            npPaymentId: tok.npId || null,
+            pixPayload: '',
+            pixQrBase64: null,
+            cryptoWallet: ''
+          };
+          orders.set(id, o);
+        }
+      }
+
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
       if (o.isCrypto) await syncNowPaymentsPayment(o);
       else await syncMercadoPagoPayment(o);

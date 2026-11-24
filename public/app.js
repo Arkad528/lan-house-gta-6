@@ -555,7 +555,9 @@
 
   async function pollOrder() {
     if (!state.order) return;
-    const { ok, data } = await api(`/api/order?id=${encodeURIComponent(state.order.orderId)}`).catch(() => ({ ok: false }));
+    const qs = new URLSearchParams({ id: state.order.orderId });
+    if (state.order.orderToken) qs.set('ot', state.order.orderToken);
+    const { ok, data } = await api(`/api/order?${qs.toString()}`).catch(() => ({ ok: false }));
     if (ok && data.order) {
       const wasActive = state.order.status === 'active';
       updateOrderStatus(data.order);
