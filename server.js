@@ -1191,6 +1191,19 @@ async function handler(req, res) {
       return sendJson(res, 404, { error: 'Rota não encontrada.' });
     }
 
+    // Proteção server-side: /admin, /admin.html e /admin.js nunca são servidos para quem não é admin
+    if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/admin' || p === '/admin/' || p === '/admin.html' || p === '/admin.js')) {
+      if (!user) {
+        if (p === '/admin' || p === '/admin/') return redirect(res, '/auth/discord?next=/admin');
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('404 - Página não encontrada');
+      }
+      if (!isAdminUser(user)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('404 - Página não encontrada');
+      }
+    }
+
     if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p);
     return sendJson(res, 405, { error: 'Método não permitido.' });
   } catch (err) {

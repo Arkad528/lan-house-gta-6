@@ -155,7 +155,17 @@
     const u = state.user;
     $('btn-open-login').classList.toggle('hidden', !!u);
     $('user-chip').classList.toggle('hidden', !u);
-    $('btn-admin-shortcut').classList.toggle('hidden', !(u && state.isAdmin));
+    const existingAdminLink = $('btn-admin-shortcut');
+    if (u && state.isAdmin) {
+      if (!existingAdminLink) {
+        const a = el('a', 'btn-link', 'Admin');
+        a.id = 'btn-admin-shortcut';
+        a.href = '/admin';
+        $('user-chip').insertBefore(a, $('btn-logout'));
+      }
+    } else if (existingAdminLink) {
+      existingAdminLink.remove();
+    }
     $('checkout-login').classList.toggle('hidden', !!u);
     $('checkout-user').classList.toggle('hidden', !u);
     if (!u) return;
