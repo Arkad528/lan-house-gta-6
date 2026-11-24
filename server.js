@@ -406,6 +406,7 @@ async function createMercadoPagoPix(req, order, user) {
     mpPaymentId: String(data.id),
     pixPayload,
     pixQrBase64,
+    mpLiveMode: data.live_mode !== false,
     ticketUrl: typeof tx.ticket_url === 'string' && /^https:\/\//.test(tx.ticket_url) ? tx.ticket_url : null
   };
 }
@@ -674,7 +675,7 @@ function publicOrder(o) {
     paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
     pixQrBase64: o.pixQrBase64 || null,
     pixSource: o.pixSource || null,
-    mpMode: o.pixSource === 'mercadopago' ? mpMode() : 'none',
+    mpMode: o.pixSource === 'mercadopago' ? (o.mpLiveMode === false ? 'sandbox' : mpMode()) : 'none',
     ticketUrl: o.ticketUrl || null,
     cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
     cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
@@ -974,6 +975,7 @@ async function handler(req, res) {
         if (mpEnabled()) {
           const mp = await createMercadoPagoPix(req, order, user);
           order.mpPaymentId = mp.mpPaymentId;
+          order.mpLiveMode = mp.mpLiveMode;
           order.pixPayload = mp.pixPayload;
           order.pixQrBase64 = mp.pixQrBase64;
           order.ticketUrl = mp.ticketUrl;
