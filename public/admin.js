@@ -129,7 +129,6 @@
 
     $('cfg-pix').value = c.pixKey || '';
     $('cfg-pix-name').value = c.pixName || '';
-    $('cfg-pix-city').value = c.pixCity || '';
     $('cfg-usdt').value = c.walletUsdt || '';
     $('cfg-btc').value = c.walletBtc || '';
     $('cfg-sol').value = c.walletSol || '';
@@ -212,7 +211,6 @@
         parsecInviteUrl: $('cfg-parsec').value.trim(),
         pixKey: $('cfg-pix').value.trim(),
         pixName: $('cfg-pix-name').value.trim(),
-        pixCity: $('cfg-pix-city').value.trim(),
         walletUsdt: $('cfg-usdt').value.trim(),
         walletBtc: $('cfg-btc').value.trim(),
         walletSol: $('cfg-sol').value.trim()

@@ -113,7 +113,7 @@ const packagesConfig = {
   npFeeRate: 0.005,  // 0,5% taxa NOWPayments embutida no preço Crypto
   usdtRateBRL: 5.0,
   packages: {
-    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 3.8 },
+    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 0.1 },
     hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, bonusMinutes: 0, priceBRL: 22.75 },
     combo_2h: { id: 'combo_2h', name: 'Combo Heist Leonida (2h15)', minutes: 120, bonusMinutes: 15, priceBRL: 44.9 },
     pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (5h)', minutes: 240, bonusMinutes: 60, priceBRL: 86.9 }
