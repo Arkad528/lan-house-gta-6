@@ -81,6 +81,12 @@
     $('p-4h').value = p.packages.pass_4h.priceBRL;
     $('p-bump').value = p.bumpPriceBRL;
 
+    $('cfg-mp-public').value = data.mpPublicKey || '';
+    $('cfg-mp-token').value = '';
+    $('cfg-mp-token').placeholder = data.mercadoPago
+      ? '•••••••••• (já configurado — digite só para trocar)'
+      : 'APP_USR-... ou TEST-...';
+
     $('cfg-pix').value = c.pixKey || '';
     $('cfg-pix-name').value = c.pixName || '';
     $('cfg-pix-city').value = c.pixCity || '';
@@ -165,6 +171,10 @@
         walletUsdt: $('cfg-usdt').value.trim(),
         walletBtc: $('cfg-btc').value.trim(),
         walletSol: $('cfg-sol').value.trim()
+      },
+      mercadoPago: {
+        publicKey: $('cfg-mp-public').value.trim(),
+        accessToken: $('cfg-mp-token').value.trim()
       },
       prices: {
         trial_10m: parseFloat($('p-10m').value),

@@ -174,11 +174,21 @@
 
         <!-- 4. PIX & Crypto -->
         <div class="card">
-          <h2>PIX & Carteiras Crypto</h2>
-          <p class="card-sub">Usados para gerar o BR Code PIX válido e os endereços Crypto.</p>
+          <h2>PIX (Mercado Pago) & Carteiras Crypto</h2>
+          <p class="card-sub">Configure seu Mercado Pago para gerar QR Code PIX e confirmar pagamentos automaticamente.</p>
 
           <div class="field">
-            <label class="field-label" for="cfg-pix">Chave PIX</label>
+            <label class="field-label" for="cfg-mp-public">Mercado Pago — Public Key</label>
+            <input type="text" id="cfg-mp-public" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="off" />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cfg-mp-token">Mercado Pago — Access Token (secreto)</label>
+            <input type="password" id="cfg-mp-token" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="new-password" />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cfg-pix">Chave PIX (fallback manual se MP estiver vazio)</label>
             <input type="text" id="cfg-pix" class="input" />
           </div>
 

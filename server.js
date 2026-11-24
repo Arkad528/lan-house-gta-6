@@ -841,6 +841,7 @@ async function handler(req, res) {
           orders: [...orders.values()].reverse().slice(0, 60),
           providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
           mercadoPago: mpEnabled(),
+          mpPublicKey: ENV.MP_PUBLIC_KEY,
           demoMode: ENV.DEMO_MODE
         });
       }
@@ -869,6 +870,32 @@ async function handler(req, res) {
         str('walletUsdt', 120);
         str('walletBtc', 120);
         str('walletSol', 120);
+
+        // Mercado Pago (salvo em memória e persistido no .env local quando possível)
+        const mp = body.mercadoPago || {};
+        let envUpdated = false;
+        if (typeof mp.publicKey === 'string' && mp.publicKey.trim()) {
+          ENV.MP_PUBLIC_KEY = clip(mp.publicKey, 160);
+          envUpdated = true;
+        }
+        if (typeof mp.accessToken === 'string' && mp.accessToken.trim()) {
+          ENV.MP_ACCESS_TOKEN = clip(mp.accessToken, 200);
+          envUpdated = true;
+        }
+        if (envUpdated && !process.env.VERCEL) {
+          try {
+            const envPath = path.join(__dirname, '.env');
+            let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+            const upsert = (key, val) => {
+              const idx = lines.findIndex((l) => l.startsWith(`${key}=`));
+              if (idx >= 0) lines[idx] = `${key}=${val}`;
+              else lines.push(`${key}=${val}`);
+            };
+            if (ENV.MP_PUBLIC_KEY) upsert('MP_PUBLIC_KEY', ENV.MP_PUBLIC_KEY);
+            if (ENV.MP_ACCESS_TOKEN) upsert('MP_ACCESS_TOKEN', ENV.MP_ACCESS_TOKEN);
+            fs.writeFileSync(envPath, lines.filter(Boolean).join('\n') + '\n', 'utf8');
+          } catch {}
+        }
 
         const prices = body.prices || {};
         for (const id of Object.keys(packagesConfig.packages)) {
