@@ -1429,3 +1429,18 @@ a {
 .orders-card {
   margin-bottom: 44px;
 }
+
+.qr-box {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.qr-box img {
+  width: 196px;
+  height: 196px;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}

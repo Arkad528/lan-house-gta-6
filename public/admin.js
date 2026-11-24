@@ -88,11 +88,12 @@
     $('cfg-btc').value = c.walletBtc || '';
     $('cfg-sol').value = c.walletSol || '';
 
-    // Status OAuth
+    // Status OAuth e Pagamento
     const oauthBox = $('oauth-status');
     oauthBox.replaceChildren(
       el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado (.env)'}`),
       el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado (.env)'}`),
+      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo (automático)' : 'não configurado (.env)'}`),
       el('span', `pill ${data.demoMode ? 'pill-cyan' : ''}`, `Modo teste: ${data.demoMode ? 'ligado' : 'desligado'}`)
     );
 

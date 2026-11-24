@@ -406,6 +406,15 @@
       : 'Pague com PIX copia e cola';
     $('o-code-label').textContent = order.isCrypto ? `Carteira ${order.paymentMethod.toUpperCase()}` : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
+    const qrBox = $('o-qr-box');
+    const qrImg = $('o-qr-img');
+    if (order.pixQrBase64 && !order.isCrypto) {
+      qrImg.src = `data:image/png;base64,${order.pixQrBase64}`;
+      qrBox.classList.remove('hidden');
+    } else {
+      qrBox.classList.add('hidden');
+      qrImg.removeAttribute('src');
+    }
     $('btn-demo-pay').classList.toggle('hidden', !state.demoMode);
     updateOrderStatus(order);
     openModal('order-modal');

@@ -37,9 +37,13 @@ const ENV = {
   DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
+  MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN || '',
+  MP_PUBLIC_KEY: process.env.MP_PUBLIC_KEY || '',
   DEMO_MODE: process.env.DEMO_MODE !== 'false',
   TRUST_PROXY: process.env.TRUST_PROXY === 'true' || !!process.env.VERCEL || !!process.env.RENDER
 };
+
+const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
 
 let SECRET = process.env.SESSION_SECRET || '';
 if (!SECRET) {
@@ -273,6 +277,81 @@ function buildPixPayload(amount, txid) {
 }
 
 // ---------------------------------------------------------------------------
+// Mercado Pago API v1 (PIX Automático + QR Code + Webhook / Verificação)
+// ---------------------------------------------------------------------------
+async function createMercadoPagoPix(req, order, user) {
+  const payerEmail =
+    user.handle && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.handle)
+      ? user.handle
+      : `player.${order.orderId.toLowerCase()}@viceplay.cloud`;
+
+  const expires = new Date(Date.now() + 30 * 60_000).toISOString();
+  const baseUrl = getBaseUrl(req);
+  const body = {
+    transaction_amount: Number(order.finalPriceBRL.toFixed(2)),
+    description: `viceplay.cloud - ${order.packageName}`,
+    payment_method_id: 'pix',
+    external_reference: order.orderId,
+    date_of_expiration: expires,
+    payer: {
+      email: payerEmail,
+      first_name: (user.name || 'Jogador').split(' ')[0].slice(0, 40)
+    }
+  };
+
+  if (baseUrl.startsWith('https://') && !baseUrl.includes('localhost')) {
+    body.notification_url = `${baseUrl}/api/webhooks/mercadopago`;
+  }
+
+  const r = await fetch('https://api.mercadopago.com/v1/payments', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ENV.MP_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': order.orderId
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000)
+  });
+
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    console.error('[viceplay] Mercado Pago erro:', r.status, JSON.stringify(data));
+    throw new Error(data.message || 'Erro ao gerar PIX no Mercado Pago.');
+  }
+
+  const tx = data.point_of_interaction?.transaction_data || {};
+  return {
+    mpPaymentId: String(data.id),
+    pixPayload: tx.qr_code || buildPixPayload(order.finalPriceBRL, order.orderId),
+    pixQrBase64: tx.qr_code_base64 || null
+  };
+}
+
+async function syncMercadoPagoPayment(order) {
+  if (!mpEnabled() || !order || !order.mpPaymentId || order.status !== 'pending') return;
+  const now = Date.now();
+  if (order.lastMpCheck && now - order.lastMpCheck < 3500) return;
+  order.lastMpCheck = now;
+
+  try {
+    const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(order.mpPaymentId)}`, {
+      headers: { Authorization: `Bearer ${ENV.MP_ACCESS_TOKEN}` },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.status === 'approved') {
+      enqueueOrActivate(order);
+    } else if (data.status === 'cancelled' || data.status === 'rejected') {
+      order.status = 'cancelled';
+    }
+  } catch (err) {
+    console.error('[viceplay] Falha ao consultar Mercado Pago:', err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fila
 // ---------------------------------------------------------------------------
 function startSession(order) {
@@ -411,6 +490,7 @@ function publicOrder(o) {
     paymentMethod: o.paymentMethod,
     isCrypto: o.isCrypto,
     paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
+    pixQrBase64: o.isCrypto ? null : o.pixQrBase64 || null,
     queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
     estimatedWaitMinutes: queueIdx >= 0 ? summary.items[queueIdx].estimatedWaitMinutes : null,
     remainingSeconds: isActive ? ps5Config.activePlayer.remainingSeconds : null,
@@ -664,9 +744,23 @@ async function handler(req, res) {
         userProvider: user.provider,
         status: 'pending',
         ...calc,
-        pixPayload: buildPixPayload(calc.finalPriceBRL, orderId),
+        mpPaymentId: null,
+        pixPayload: '',
+        pixQrBase64: null,
         cryptoWallet: calc.paymentMethod === 'btc' ? ps5Config.walletBtc : calc.paymentMethod === 'sol' ? ps5Config.walletSol : ps5Config.walletUsdt
       };
+
+      if (!order.isCrypto) {
+        if (mpEnabled()) {
+          const mp = await createMercadoPagoPix(req, order, user);
+          order.mpPaymentId = mp.mpPaymentId;
+          order.pixPayload = mp.pixPayload;
+          order.pixQrBase64 = mp.pixQrBase64;
+        } else {
+          order.pixPayload = buildPixPayload(calc.finalPriceBRL, orderId);
+        }
+      }
+
       orders.set(orderId, order);
       return sendJson(res, 200, { ok: true, order: publicOrder(order) });
     }
@@ -675,7 +769,42 @@ async function handler(req, res) {
       if (!user) return sendJson(res, 401, { error: 'login' });
       const o = orders.get(String(url.searchParams.get('id') || ''));
       if (!o || o.uid !== user.uid) return sendJson(res, 404, { error: 'Pedido não encontrado.' });
+      await syncMercadoPagoPayment(o);
       return sendJson(res, 200, { ok: true, order: publicOrder(o) });
+    }
+
+    // Webhook oficial do Mercado Pago (confirma pagamento instantaneamente)
+    if (req.method === 'POST' && p === '/api/webhooks/mercadopago') {
+      if (!mpEnabled()) return sendJson(res, 200, { ok: true });
+      const body = await readJson(req).catch(() => ({}));
+      const mpId = String(body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id') || '');
+      if (mpId) {
+        let target = [...orders.values()].find((o) => o.mpPaymentId === mpId);
+        if (!target) {
+          // Consulta na API do MP para pegar external_reference
+          try {
+            const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(mpId)}`, {
+              headers: { Authorization: `Bearer ${ENV.MP_ACCESS_TOKEN}` },
+              signal: AbortSignal.timeout(8000)
+            });
+            if (r.ok) {
+              const mpData = await r.json();
+              target = orders.get(String(mpData.external_reference || ''));
+              if (target) {
+                target.mpPaymentId = mpId;
+                if (mpData.status === 'approved') enqueueOrActivate(target);
+                else if (mpData.status === 'cancelled' || mpData.status === 'rejected') target.status = 'cancelled';
+              }
+            }
+          } catch (err) {
+            console.error('[viceplay] Webhook MP erro:', err.message);
+          }
+        } else {
+          target.lastMpCheck = 0;
+          await syncMercadoPagoPayment(target);
+        }
+      }
+      return sendJson(res, 200, { ok: true });
     }
 
     // Simulação de pagamento: só em modo de teste e só para o dono do pedido
@@ -711,6 +840,7 @@ async function handler(req, res) {
           queueSummary: queueSummary(false),
           orders: [...orders.values()].reverse().slice(0, 60),
           providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
+          mercadoPago: mpEnabled(),
           demoMode: ENV.DEMO_MODE
         });
       }
@@ -803,6 +933,7 @@ if (require.main === module) {
     console.log(`[viceplay.cloud] Rodando em http://localhost:${ENV.PORT}`);
     console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
+    console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado (BR Code manual)'}`);
     console.log(`  Modo de teste: ${ENV.DEMO_MODE ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
 }
