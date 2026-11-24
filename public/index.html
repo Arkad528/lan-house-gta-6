@@ -318,6 +318,14 @@
         <div class="qr-box hidden" id="o-qr-box">
           <img id="o-qr-img" alt="QR Code PIX Mercado Pago" />
         </div>
+        <div class="amount-copy-box hidden" id="o-amount-box">
+          <span class="field-label" id="o-amount-label">Valor exato a enviar</span>
+          <div class="copy-row">
+            <input type="text" class="input input-mono" id="o-crypto-amount" readonly />
+            <button type="button" class="btn btn-secondary" id="btn-copy-amount">Copiar</button>
+          </div>
+          <p class="network-warn" id="o-exact-warn">⚠️ Envie exatamente este valor (sem descontar taxa da corretora). Valores menores não confirmam automaticamente.</p>
+        </div>
         <span class="field-label" id="o-code-label">PIX copia e cola</span>
         <div class="copy-row">
           <input type="text" class="input input-mono" id="o-code" readonly />

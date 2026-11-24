@@ -1603,3 +1603,7 @@ a {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.amount-copy-box {
+  margin-bottom: 12px;
+}

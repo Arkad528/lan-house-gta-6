@@ -686,6 +686,19 @@
       ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}${netSuffix}`
       : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
+    const amountBox = $('o-amount-box');
+    const amountInput = $('o-crypto-amount');
+    if (order.isCrypto) {
+      const exactVal = order.cryptoPayAmount || order.finalUSDT;
+      const exactCur = order.cryptoPayCurrency || order.paymentMethod.toUpperCase();
+      $('o-amount-label').textContent = `Valor exato a enviar (${exactCur})`;
+      amountInput.value = exactVal;
+      $('o-exact-warn').textContent = `⚠️ Envie exatamente ${exactVal} ${exactCur}${netSuffix} (sem descontar a taxa da corretora). Valores menores não confirmam automaticamente.`;
+      amountBox.classList.remove('hidden');
+    } else {
+      amountBox.classList.add('hidden');
+      amountInput.value = '';
+    }
     const extraBox = $('o-extra-box');
     const extraInput = $('o-extra-id');
     if (order.isCrypto && order.cryptoExtraId) {
@@ -882,6 +895,19 @@
     $('crypto-select').addEventListener('change', (e) => {
       state.coin = e.target.value;
       renderCheckout();
+    });
+
+    $('btn-copy-amount').addEventListener('click', async () => {
+      const input = $('o-crypto-amount');
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand('copy');
+      }
+      const btn = $('btn-copy-amount');
+      btn.textContent = 'Copiado';
+      setTimeout(() => (btn.textContent = 'Copiar'), 1800);
     });
 
     $('btn-copy-extra').addEventListener('click', async () => {
