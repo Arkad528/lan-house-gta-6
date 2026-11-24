@@ -1385,3 +1385,17 @@ h1, h2, h3, h4, .brand-name, .price-main, .slider-time-big {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+/* Topo Minimalista Sem Barra Superior (Apenas Conectar Conta) */
+.top-auth-only {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 14px;
+  padding-bottom: 2px;
+}
+
+.live-stage-section {
+  padding-top: 8px;
+}
