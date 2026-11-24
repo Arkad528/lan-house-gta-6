@@ -441,14 +441,16 @@
       ? order.cryptoPayAmount
         ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency} para o endereço abaixo`
         : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}`
-      : 'Pague com PIX copia e cola ou QR Code';
+      : order.pixSource === 'mercadopago'
+      ? 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola'
+      : 'Escaneie o QR Code PIX ou use Copia e Cola';
     $('o-code-label').textContent = order.isCrypto
       ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}`
       : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
     const qrBox = $('o-qr-box');
     const qrImg = $('o-qr-img');
-    if (order.pixQrBase64 && !order.isCrypto) {
+    if (order.pixQrBase64) {
       qrImg.src = `data:image/png;base64,${order.pixQrBase64}`;
       qrBox.classList.remove('hidden');
     } else {

@@ -12,6 +12,20 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+let QRCode = null;
+try {
+  QRCode = require('qrcode');
+} catch {}
+
+async function generateQrBase64(text) {
+  if (!QRCode || !text) return null;
+  try {
+    const dataUrl = await QRCode.toDataURL(String(text), { width: 256, margin: 2, errorCorrectionLevel: 'M' });
+    return dataUrl.replace(/^data:image\/png;base64,/, '');
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // .env (carregador simples, sem dependência)
@@ -331,7 +345,7 @@ async function createMercadoPagoPix(req, order, user) {
       ? user.handle
       : `player.${order.orderId.toLowerCase()}@playgta6.com`;
 
-  const expires = new Date(Date.now() + 30 * 60_000).toISOString();
+  const expires = new Date(Date.now() + 30 * 60_000).toISOString().replace('Z', '-00:00');
   const baseUrl = getBaseUrl(req);
   const body = {
     transaction_amount: Number(order.finalPriceBRL.toFixed(2)),
@@ -363,14 +377,21 @@ async function createMercadoPagoPix(req, order, user) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     console.error('[playgta6] Mercado Pago erro:', r.status, JSON.stringify(data));
-    throw new Error(data.message || 'Erro ao gerar PIX no Mercado Pago.');
+    throw new Error('Erro ao gerar PIX no Mercado Pago. Verifique seu Access Token.');
   }
 
   const tx = data.point_of_interaction?.transaction_data || {};
+  const pixPayload = tx.qr_code || buildPixPayload(order.finalPriceBRL, order.orderId);
+  const cleanMpQr = typeof tx.qr_code_base64 === 'string' && tx.qr_code_base64.trim()
+    ? tx.qr_code_base64.replace(/\s+/g, '')
+    : null;
+  const pixQrBase64 = cleanMpQr || (await generateQrBase64(pixPayload));
+
   return {
     mpPaymentId: String(data.id),
-    pixPayload: tx.qr_code || buildPixPayload(order.finalPriceBRL, order.orderId),
-    pixQrBase64: tx.qr_code_base64 || null
+    pixPayload,
+    pixQrBase64,
+    ticketUrl: typeof tx.ticket_url === 'string' && /^https:\/\//.test(tx.ticket_url) ? tx.ticket_url : null
   };
 }
 
@@ -624,7 +645,9 @@ function publicOrder(o) {
     paymentMethod: o.paymentMethod,
     isCrypto: o.isCrypto,
     paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
-    pixQrBase64: o.isCrypto ? null : o.pixQrBase64 || null,
+    pixQrBase64: o.pixQrBase64 || null,
+    pixSource: o.pixSource || null,
+    ticketUrl: o.ticketUrl || null,
     cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
     cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
     queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
@@ -910,6 +933,8 @@ async function handler(req, res) {
         npPaymentId: null,
         pixPayload: '',
         pixQrBase64: null,
+        pixSource: null,
+        ticketUrl: null,
         cryptoPayAmount: null,
         cryptoPayCurrency: null,
         cryptoWallet: calc.paymentMethod === 'btc' ? ps5Config.walletBtc : calc.paymentMethod === 'sol' ? ps5Config.walletSol : ps5Config.walletUsdt
@@ -921,15 +946,22 @@ async function handler(req, res) {
           order.mpPaymentId = mp.mpPaymentId;
           order.pixPayload = mp.pixPayload;
           order.pixQrBase64 = mp.pixQrBase64;
+          order.ticketUrl = mp.ticketUrl;
+          order.pixSource = 'mercadopago';
         } else {
           order.pixPayload = buildPixPayload(calc.finalPriceBRL, orderId);
+          order.pixQrBase64 = await generateQrBase64(order.pixPayload);
+          order.pixSource = 'manual';
         }
-      } else if (npEnabled()) {
-        const np = await createNowPaymentsCrypto(req, order);
-        order.npPaymentId = np.npPaymentId;
-        order.cryptoWallet = np.cryptoWallet;
-        order.cryptoPayAmount = np.cryptoPayAmount;
-        order.cryptoPayCurrency = np.cryptoPayCurrency;
+      } else {
+        if (npEnabled()) {
+          const np = await createNowPaymentsCrypto(req, order);
+          order.npPaymentId = np.npPaymentId;
+          order.cryptoWallet = np.cryptoWallet;
+          order.cryptoPayAmount = np.cryptoPayAmount;
+          order.cryptoPayCurrency = np.cryptoPayCurrency;
+        }
+        order.pixQrBase64 = await generateQrBase64(order.cryptoWallet);
       }
 
       orders.set(orderId, order);
@@ -1208,7 +1240,13 @@ async function handler(req, res) {
     return sendJson(res, 405, { error: 'Método não permitido.' });
   } catch (err) {
     console.error('[playgta6] Erro:', err.message);
-    const safeErrors = ['Payload muito grande', 'JSON inválido', 'Selecione um pacote válido.'];
+    const safeErrors = [
+      'Payload muito grande',
+      'JSON inválido',
+      'Selecione um pacote válido.',
+      'Erro ao gerar PIX no Mercado Pago. Verifique seu Access Token.',
+      'Erro ao gerar pagamento Crypto na NOWPayments.'
+    ];
     const msg = safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
     return sendJson(res, 400, { error: msg });
   }
