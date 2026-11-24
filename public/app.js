@@ -677,11 +677,9 @@
       ? order.cryptoPayAmount
         ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency}${netSuffix}`
         : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}${netSuffix}`
-      : order.pixSource === 'mercadopago'
-      ? order.mpMode === 'sandbox'
-        ? 'PIX Mercado Pago (MODO TESTE — use Access Token APP_USR- para banco real)'
-        : 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola'
-      : 'PIX Manual (configure MP_ACCESS_TOKEN na Vercel para Mercado Pago automático)';
+      : order.mpMode === 'sandbox'
+      ? 'PIX Mercado Pago (MODO TESTE — use Access Token APP_USR- para banco real)'
+      : 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola';
     $('o-code-label').textContent = order.isCrypto
       ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}${netSuffix}`
       : 'PIX copia e cola';

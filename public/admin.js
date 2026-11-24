@@ -126,12 +126,6 @@
     $('cfg-np-ipn').placeholder = data.nowPaymentsIpnConfigured
       ? '•••••••••• (já configurado — digite só para trocar)'
       : 'IPN Secret Key (opcional)';
-
-    $('cfg-pix').value = c.pixKey || '';
-    $('cfg-pix-name').value = c.pixName || '';
-    $('cfg-usdt').value = c.walletUsdt || '';
-    $('cfg-btc').value = c.walletBtc || '';
-    $('cfg-sol').value = c.walletSol || '';
   }
 
   function updateLiveStatus(data) {
@@ -218,12 +212,7 @@
         ps5LocalIp: $('cfg-ip').value.trim(),
         remotePlayPin: $('cfg-pin').value.trim(),
         connectionMode: $('cfg-mode').value,
-        parsecInviteUrl: $('cfg-parsec').value.trim(),
-        pixKey: $('cfg-pix').value.trim(),
-        pixName: $('cfg-pix-name').value.trim(),
-        walletUsdt: $('cfg-usdt').value.trim(),
-        walletBtc: $('cfg-btc').value.trim(),
-        walletSol: $('cfg-sol').value.trim()
+        parsecInviteUrl: $('cfg-parsec').value.trim()
       },
       mercadoPago: {
         publicKey: $('cfg-mp-public').value.trim(),

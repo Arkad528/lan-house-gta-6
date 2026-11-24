@@ -181,19 +181,19 @@
           </div>
         </div>
 
-        <!-- 4. PIX & Crypto -->
+        <!-- 4. Pagamentos Automáticos (Mercado Pago & NOWPayments) -->
         <div class="card">
-          <h2>PIX (Mercado Pago) & Crypto (NOWPayments)</h2>
-          <p class="card-sub">Configure Mercado Pago (PIX) e NOWPayments (Crypto) para confirmação 100% automática.</p>
+          <h2>Pagamentos Automáticos</h2>
+          <p class="card-sub">Configure Mercado Pago (PIX) e NOWPayments (Crypto) para gerar QR Codes reais e confirmar automaticamente.</p>
 
           <div class="form-grid">
             <div class="field">
               <label class="field-label" for="cfg-mp-public">Mercado Pago — Public Key</label>
-              <input type="text" id="cfg-mp-public" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="off" />
+              <input type="text" id="cfg-mp-public" class="input input-mono" placeholder="APP_USR-..." autocomplete="off" />
             </div>
             <div class="field">
               <label class="field-label" for="cfg-mp-token">Mercado Pago — Access Token</label>
-              <input type="password" id="cfg-mp-token" class="input input-mono" placeholder="APP_USR-... ou TEST-..." autocomplete="new-password" />
+              <input type="password" id="cfg-mp-token" class="input input-mono" placeholder="APP_USR-..." autocomplete="new-password" />
             </div>
           </div>
 
@@ -208,28 +208,7 @@
             </div>
           </div>
 
-          <div class="field">
-            <label class="field-label" for="cfg-pix">Chave PIX (fallback manual se MP estiver vazio)</label>
-            <input type="text" id="cfg-pix" class="input" />
-          </div>
-
-          <div class="field">
-            <label class="field-label" for="cfg-pix-name">Nome recebedor PIX</label>
-            <input type="text" id="cfg-pix-name" class="input" maxlength="25" />
-          </div>
-
-          <div class="field">
-            <label class="field-label" for="cfg-usdt">Carteira USDT</label>
-            <input type="text" id="cfg-usdt" class="input input-mono" />
-          </div>
-          <div class="field">
-            <label class="field-label" for="cfg-btc">Carteira BTC</label>
-            <input type="text" id="cfg-btc" class="input input-mono" />
-          </div>
-          <div class="field">
-            <label class="field-label" for="cfg-sol">Carteira SOL</label>
-            <input type="text" id="cfg-sol" class="input input-mono" />
-          </div>
+          <p class="card-sub">Na Vercel, salve também estas chaves em <strong>Settings → Environment Variables</strong> para persistirem em todas as instâncias.</p>
         </div>
       </div>
 

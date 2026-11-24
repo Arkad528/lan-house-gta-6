@@ -101,13 +101,7 @@ const ps5Config = {
   streamSourceUrl: 'https://www.youtube.com/embed/QdBZY2fkU-0?autoplay=1&mute=1&loop=1&playlist=QdBZY2fkU-0&controls=1&rel=0',
   streamTitle: 'Sessão GTA VI • PS5 #01',
   activePlayer: null, // { orderId, uid, name, totalMinutes, remainingSeconds, startedAt }
-  queue: [], // [{ orderId, uid, name, totalMinutes, joinedAt }]
-  pixKey: 'pix@playgta6.com',
-  pixName: 'PLAYGTA6',
-  pixCity: 'SAO PAULO',
-  walletUsdt: '0x71C89A4B29F10cE9824F1B3bA91820E77c9f2A1',
-  walletBtc: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-  walletSol: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
+  queue: [] // [{ orderId, uid, name, totalMinutes, joinedAt }]
 };
 
 const packagesConfig = {
@@ -303,51 +297,6 @@ function verifyCsrf(token, uid, strictUid) {
 }
 
 // ---------------------------------------------------------------------------
-// PIX copia e cola (BR Code / EMV) com CRC16-CCITT válido
-// ---------------------------------------------------------------------------
-function emv(id, value) {
-  return `${id}${String(value.length).padStart(2, '0')}${value}`;
-}
-
-function crc16(payload) {
-  let crc = 0xffff;
-  for (const byte of Buffer.from(payload, 'utf8')) {
-    crc ^= byte << 8;
-    for (let i = 0; i < 8; i++) {
-      crc = crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1;
-      crc &= 0xffff;
-    }
-  }
-  return crc.toString(16).toUpperCase().padStart(4, '0');
-}
-
-function asciiUpper(str, max) {
-  return String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-z0-9 ]/g, '')
-    .toUpperCase()
-    .trim()
-    .slice(0, max);
-}
-
-function buildPixPayload(amount, txid) {
-  const merchant = emv('00', 'br.gov.bcb.pix') + emv('01', ps5Config.pixKey.slice(0, 77));
-  const base =
-    emv('00', '01') +
-    emv('26', merchant) +
-    emv('52', '0000') +
-    emv('53', '986') +
-    emv('54', amount.toFixed(2)) +
-    emv('58', 'BR') +
-    emv('59', asciiUpper(ps5Config.pixName, 25) || 'PLAYGTA6') +
-    emv('60', asciiUpper(ps5Config.pixCity, 15) || 'SAO PAULO') +
-    emv('62', emv('05', txid.replace(/[^A-Za-z0-9]/g, '').slice(0, 25) || '***')) +
-    '6304';
-  return base + crc16(base);
-}
-
-// ---------------------------------------------------------------------------
 // Mercado Pago API v1 (PIX Automático + QR Code + Webhook / Verificação)
 // ---------------------------------------------------------------------------
 async function createMercadoPagoPix(req, order, user) {
@@ -446,27 +395,27 @@ async function syncMercadoPagoPayment(order) {
 // ---------------------------------------------------------------------------
 const CRYPTO_CATALOG = [
   // Stablecoins
-  { id: 'usdttrc20', label: 'USDT', network: 'TRC20 (Tron)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtbsc', label: 'USDT', network: 'BEP20 (BSC)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtmatic', label: 'USDT', network: 'Polygon', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtarb', label: 'USDT', network: 'Arbitrum', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtop', label: 'USDT', network: 'Optimism', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtton', label: 'USDT', network: 'TON', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdterc20', label: 'USDT', network: 'ERC20 (Ethereum)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdtavaxc', label: 'USDT', network: 'AVAX C-Chain', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdcsol', label: 'USDC', network: 'Solana', group: 'Stablecoins', fallbackKey: 'walletSol' },
-  { id: 'usdcmatic', label: 'USDC', network: 'Polygon', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdcbsc', label: 'USDC', network: 'BEP20 (BSC)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdcarb', label: 'USDC', network: 'Arbitrum', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdcop', label: 'USDC', network: 'Optimism', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
-  { id: 'usdc', label: 'USDC', network: 'ERC20 (Ethereum)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdttrc20', label: 'USDT', network: 'TRC20 (Tron)', group: 'Stablecoins' },
+  { id: 'usdtbsc', label: 'USDT', network: 'BEP20 (BSC)', group: 'Stablecoins' },
+  { id: 'usdtmatic', label: 'USDT', network: 'Polygon', group: 'Stablecoins' },
+  { id: 'usdtarb', label: 'USDT', network: 'Arbitrum', group: 'Stablecoins' },
+  { id: 'usdtop', label: 'USDT', network: 'Optimism', group: 'Stablecoins' },
+  { id: 'usdtton', label: 'USDT', network: 'TON', group: 'Stablecoins' },
+  { id: 'usdterc20', label: 'USDT', network: 'ERC20 (Ethereum)', group: 'Stablecoins' },
+  { id: 'usdtavaxc', label: 'USDT', network: 'AVAX C-Chain', group: 'Stablecoins' },
+  { id: 'usdcsol', label: 'USDC', network: 'Solana', group: 'Stablecoins' },
+  { id: 'usdcmatic', label: 'USDC', network: 'Polygon', group: 'Stablecoins' },
+  { id: 'usdcbsc', label: 'USDC', network: 'BEP20 (BSC)', group: 'Stablecoins' },
+  { id: 'usdcarb', label: 'USDC', network: 'Arbitrum', group: 'Stablecoins' },
+  { id: 'usdcop', label: 'USDC', network: 'Optimism', group: 'Stablecoins' },
+  { id: 'usdc', label: 'USDC', network: 'ERC20 (Ethereum)', group: 'Stablecoins' },
   // Popular Coins
-  { id: 'btc', label: 'BTC', network: 'Bitcoin', group: 'Populares', fallbackKey: 'walletBtc' },
-  { id: 'eth', label: 'ETH', network: 'Ethereum', group: 'Populares', fallbackKey: 'walletUsdt' },
-  { id: 'ltc', label: 'LTC', network: 'Litecoin', group: 'Populares', fallbackKey: 'walletBtc' },
-  { id: 'trx', label: 'TRX', network: 'Tron (TRC20)', group: 'Populares', fallbackKey: 'walletUsdt' },
-  { id: 'bnbbsc', label: 'BNB', network: 'BSC (BEP20)', group: 'Populares', fallbackKey: 'walletUsdt' },
-  { id: 'ton', label: 'TON', network: 'TON Network', group: 'Populares', fallbackKey: 'walletUsdt' }
+  { id: 'btc', label: 'BTC', network: 'Bitcoin', group: 'Populares' },
+  { id: 'eth', label: 'ETH', network: 'Ethereum', group: 'Populares' },
+  { id: 'ltc', label: 'LTC', network: 'Litecoin', group: 'Populares' },
+  { id: 'trx', label: 'TRX', network: 'Tron (TRC20)', group: 'Populares' },
+  { id: 'bnbbsc', label: 'BNB', network: 'BSC (BEP20)', group: 'Populares' },
+  { id: 'ton', label: 'TON', network: 'TON Network', group: 'Populares' }
 ];
 
 const CRYPTO_BY_ID = Object.fromEntries(CRYPTO_CATALOG.map((c) => [c.id, c]));
@@ -1081,35 +1030,31 @@ async function handler(req, res) {
         ticketUrl: null,
         cryptoPayAmount: null,
         cryptoPayCurrency: null,
-        cryptoWallet: calc.paymentMethod === 'btc' ? ps5Config.walletBtc : calc.paymentMethod === 'sol' ? ps5Config.walletSol : ps5Config.walletUsdt
+        cryptoExtraId: null,
+        cryptoWallet: ''
       };
 
       if (!order.isCrypto) {
-        if (mpEnabled()) {
-          const mp = await createMercadoPagoPix(req, order, user);
-          order.mpPaymentId = mp.mpPaymentId;
-          order.pixPayload = mp.pixPayload;
-          order.pixQrBase64 = mp.pixQrBase64;
-          order.ticketUrl = mp.ticketUrl;
-          order.pixSource = 'mercadopago';
-        } else {
-          order.pixPayload = buildPixPayload(calc.finalPriceBRL, orderId);
-          order.pixQrBase64 = await generateQrBase64(order.pixPayload);
-          order.pixSource = 'manual';
+        if (!mpEnabled()) {
+          return sendJson(res, 503, { error: 'PIX (Mercado Pago) não está configurado no servidor. Adicione MP_ACCESS_TOKEN na Vercel.' });
         }
+        const mp = await createMercadoPagoPix(req, order, user);
+        order.mpPaymentId = mp.mpPaymentId;
+        order.pixPayload = mp.pixPayload;
+        order.pixQrBase64 = mp.pixQrBase64;
+        order.ticketUrl = mp.ticketUrl;
+        order.pixSource = 'mercadopago';
       } else {
-        const fallbackOpt = resolveCryptoOption(calc.paymentMethod);
-        const fallbackWallet = fallbackOpt ? ps5Config[fallbackOpt.fallbackKey] : ps5Config.walletUsdt;
-        order.cryptoWallet = fallbackWallet;
-        if (npEnabled()) {
-          const np = await createNowPaymentsCrypto(req, order);
-          order.npPaymentId = np.npPaymentId;
-          order.cryptoWallet = np.cryptoWallet;
-          order.cryptoPayAmount = np.cryptoPayAmount;
-          order.cryptoPayCurrency = np.cryptoPayCurrency;
-          order.cryptoNetwork = np.cryptoNetwork;
-          order.cryptoExtraId = np.cryptoExtraId;
+        if (!npEnabled()) {
+          return sendJson(res, 503, { error: 'Crypto (NOWPayments) não está configurado no servidor. Adicione NOWPAYMENTS_API_KEY na Vercel.' });
         }
+        const np = await createNowPaymentsCrypto(req, order);
+        order.npPaymentId = np.npPaymentId;
+        order.cryptoWallet = np.cryptoWallet;
+        order.cryptoPayAmount = np.cryptoPayAmount;
+        order.cryptoPayCurrency = np.cryptoPayCurrency;
+        order.cryptoNetwork = np.cryptoNetwork;
+        order.cryptoExtraId = np.cryptoExtraId;
         order.pixQrBase64 = await generateQrBase64(order.cryptoWallet);
       }
 
@@ -1285,12 +1230,6 @@ async function handler(req, res) {
           }
           ps5Config.parsecInviteUrl = clip(c.parsecInviteUrl, 300);
         }
-        str('pixKey', 77);
-        str('pixName', 25);
-        str('pixCity', 15);
-        str('walletUsdt', 120);
-        str('walletBtc', 120);
-        str('walletSol', 120);
 
         // Mercado Pago & NOWPayments (salvos em memória e persistidos no .env local quando possível)
         const mp = body.mercadoPago || {};
@@ -1440,8 +1379,8 @@ if (require.main === module) {
     console.log(`[playgta6] Rodando em http://localhost:${ENV.PORT}`);
     console.log(`  Discord login: ${providerEnabled('discord') ? 'ativo' : 'não configurado'}`);
     console.log(`  Google login:  ${providerEnabled('google') ? 'ativo' : 'não configurado'}`);
-    console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado (BR Code manual)'}`);
-    console.log(`  NOWPayments:   ${npEnabled() ? 'ativo (Crypto automático)' : 'não configurado (carteiras manuais)'}`);
+    console.log(`  Mercado Pago:  ${mpEnabled() ? 'ativo (PIX automático)' : 'não configurado'}`);
+    console.log(`  NOWPayments:   ${npEnabled() ? 'ativo (Crypto automático)' : 'não configurado'}`);
     console.log(`  Modo de teste: ${isDemoMode() ? 'ligado (botão "simular pagamento")' : 'desligado'}`);
   });
 }
