@@ -144,7 +144,17 @@
       el('span', 'pill pill-green', `Admin: ${data.adminUser?.name || 'Discord'}`),
       el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado'}`),
       el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado'}`),
-      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo' : 'não configurado'}`),
+      el(
+        'span',
+        `pill ${data.mpMode === 'prod' ? 'pill-green' : 'pill-amber'}`,
+        `Mercado Pago PIX: ${
+          data.mpMode === 'prod'
+            ? 'produção (APP_USR)'
+            : data.mpMode === 'sandbox'
+            ? 'TESTE/SANDBOX (use APP_USR p/ banco real)'
+            : 'não configurado'
+        }`
+      ),
       el('span', `pill ${data.nowPayments ? 'pill-green' : 'pill-amber'}`, `NOWPayments Crypto: ${data.nowPayments ? 'ativo' : 'não configurado'}`),
       el('span', `pill ${data.demoMode ? 'pill-cyan' : ''}`, `Modo teste: ${data.demoMode ? 'ligado' : 'desligado'}`)
     );

@@ -64,6 +64,11 @@ const ENV = {
 };
 
 const mpEnabled = () => !!ENV.MP_ACCESS_TOKEN;
+const mpMode = () => {
+  if (!ENV.MP_ACCESS_TOKEN) return 'none';
+  if (ENV.MP_ACCESS_TOKEN.startsWith('TEST-')) return 'sandbox';
+  return 'prod';
+};
 const npEnabled = () => !!ENV.NOWPAYMENTS_API_KEY;
 // Modo de teste fica DESLIGADO automaticamente se Mercado Pago ou NOWPayments estiverem ativos (a menos que DEMO_MODE=true explícito)
 const isDemoMode = () => {
@@ -387,7 +392,11 @@ async function createMercadoPagoPix(req, order, user) {
   }
 
   const tx = data.point_of_interaction?.transaction_data || {};
-  const pixPayload = tx.qr_code || buildPixPayload(order.finalPriceBRL, order.orderId);
+  if (!tx.qr_code) {
+    console.error('[playgta6] Mercado Pago sem qr_code:', JSON.stringify(data));
+    throw new Error('Mercado Pago não retornou o código PIX. Verifique se sua conta tem chave PIX ativa.');
+  }
+  const pixPayload = String(tx.qr_code).trim();
   const cleanMpQr = typeof tx.qr_code_base64 === 'string' && tx.qr_code_base64.trim()
     ? tx.qr_code_base64.replace(/\s+/g, '')
     : null;
@@ -665,6 +674,7 @@ function publicOrder(o) {
     paymentCode: o.isCrypto ? o.cryptoWallet : o.pixPayload,
     pixQrBase64: o.pixQrBase64 || null,
     pixSource: o.pixSource || null,
+    mpMode: o.pixSource === 'mercadopago' ? mpMode() : 'none',
     ticketUrl: o.ticketUrl || null,
     cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
     cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
@@ -1086,6 +1096,7 @@ async function handler(req, res) {
           orders: [...orders.values()].reverse().slice(0, 60),
           providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
           mercadoPago: mpEnabled(),
+          mpMode: mpMode(),
           mpPublicKey: ENV.MP_PUBLIC_KEY,
           nowPayments: npEnabled(),
           nowPaymentsIpnConfigured: !!ENV.NOWPAYMENTS_IPN_SECRET,
@@ -1265,6 +1276,7 @@ async function handler(req, res) {
       'JSON inválido',
       'Selecione um pacote válido.',
       'Erro ao gerar PIX no Mercado Pago. Verifique seu Access Token.',
+      'Mercado Pago não retornou o código PIX. Verifique se sua conta tem chave PIX ativa.',
       'Erro ao gerar pagamento Crypto na NOWPayments.'
     ];
     const msg = safeErrors.includes(err.message) ? err.message : 'Erro ao processar requisição.';
