@@ -442,20 +442,35 @@ async function syncMercadoPagoPayment(order) {
 }
 
 // ---------------------------------------------------------------------------
-// NOWPayments API v1 (Crypto Automático + Redes dinâmicas via /v1/merchant/coins)
+// NOWPayments API v1 (Moedas e redes exatamente habilitadas na loja + /v1/merchant/coins)
 // ---------------------------------------------------------------------------
 const CRYPTO_CATALOG = [
-  { id: 'usdttrc20', label: 'USDT', network: 'TRC20', fallbackKey: 'walletUsdt' },
-  { id: 'usdtbsc', label: 'USDT', network: 'BEP20', fallbackKey: 'walletUsdt' },
-  { id: 'usdtmatic', label: 'USDT', network: 'Polygon', fallbackKey: 'walletUsdt' },
-  { id: 'sol', label: 'SOL', network: 'Solana', fallbackKey: 'walletSol' },
-  { id: 'btc', label: 'BTC', network: 'Bitcoin', fallbackKey: 'walletBtc' },
-  { id: 'ltc', label: 'LTC', network: 'Litecoin', fallbackKey: 'walletBtc' }
+  // Stablecoins
+  { id: 'usdttrc20', label: 'USDT', network: 'TRC20 (Tron)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtbsc', label: 'USDT', network: 'BEP20 (BSC)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtmatic', label: 'USDT', network: 'Polygon', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtarb', label: 'USDT', network: 'Arbitrum', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtop', label: 'USDT', network: 'Optimism', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtton', label: 'USDT', network: 'TON', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdterc20', label: 'USDT', network: 'ERC20 (Ethereum)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdtavaxc', label: 'USDT', network: 'AVAX C-Chain', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdcsol', label: 'USDC', network: 'Solana', group: 'Stablecoins', fallbackKey: 'walletSol' },
+  { id: 'usdcmatic', label: 'USDC', network: 'Polygon', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdcbsc', label: 'USDC', network: 'BEP20 (BSC)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdcarb', label: 'USDC', network: 'Arbitrum', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdcop', label: 'USDC', network: 'Optimism', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  { id: 'usdc', label: 'USDC', network: 'ERC20 (Ethereum)', group: 'Stablecoins', fallbackKey: 'walletUsdt' },
+  // Popular Coins
+  { id: 'btc', label: 'BTC', network: 'Bitcoin', group: 'Populares', fallbackKey: 'walletBtc' },
+  { id: 'eth', label: 'ETH', network: 'Ethereum', group: 'Populares', fallbackKey: 'walletUsdt' },
+  { id: 'ltc', label: 'LTC', network: 'Litecoin', group: 'Populares', fallbackKey: 'walletBtc' },
+  { id: 'trx', label: 'TRX', network: 'Tron (TRC20)', group: 'Populares', fallbackKey: 'walletUsdt' },
+  { id: 'bnbbsc', label: 'BNB', network: 'BSC (BEP20)', group: 'Populares', fallbackKey: 'walletUsdt' },
+  { id: 'ton', label: 'TON', network: 'TON Network', group: 'Populares', fallbackKey: 'walletUsdt' }
 ];
 
 const CRYPTO_BY_ID = Object.fromEntries(CRYPTO_CATALOG.map((c) => [c.id, c]));
-// Compatibilidade com aliases curtos ('usdt' -> 'usdttrc20')
-const CRYPTO_ALIASES = { usdt: 'usdttrc20', btc: 'btc', sol: 'sol', ltc: 'ltc' };
+const CRYPTO_ALIASES = { usdt: 'usdttrc20', btc: 'btc', ltc: 'ltc', eth: 'eth', trx: 'trx', ton: 'ton', bnb: 'bnbbsc' };
 
 function resolveCryptoOption(method) {
   const key = CRYPTO_ALIASES[method] || method;
@@ -541,7 +556,8 @@ async function createNowPaymentsCrypto(req, order) {
     cryptoWallet: String(data.pay_address),
     cryptoPayAmount: data.pay_amount !== undefined ? String(data.pay_amount) : null,
     cryptoPayCurrency: String(data.pay_currency || payCurrency).toUpperCase(),
-    cryptoNetwork: data.network ? String(data.network).toUpperCase() : opt.network
+    cryptoNetwork: data.network ? String(data.network).toUpperCase() : opt.network,
+    cryptoExtraId: data.payin_extra_id ? String(data.payin_extra_id) : null
   };
 }
 
@@ -773,6 +789,7 @@ function publicOrder(o) {
     cryptoPayAmount: o.isCrypto ? o.cryptoPayAmount || null : null,
     cryptoPayCurrency: o.isCrypto ? o.cryptoPayCurrency || o.paymentMethod.toUpperCase() : null,
     cryptoNetwork: o.isCrypto ? o.cryptoNetwork || null : null,
+    cryptoExtraId: o.isCrypto ? o.cryptoExtraId || null : null,
     queuePosition: queueIdx >= 0 ? queueIdx + 1 : null,
     estimatedWaitMinutes: queueIdx >= 0 ? summary.items[queueIdx].estimatedWaitMinutes : null,
     remainingSeconds: isActive ? ps5Config.activePlayer.remainingSeconds : null,
@@ -1021,7 +1038,7 @@ async function handler(req, res) {
         mpFeeRate: packagesConfig.mpFeeRate,
         npFeeRate: packagesConfig.npFeeRate,
         usdtRateBRL: packagesConfig.usdtRateBRL,
-        cryptoOptions: cryptoOptions.map((c) => ({ id: c.id, label: c.label, network: c.network })),
+        cryptoOptions: cryptoOptions.map((c) => ({ id: c.id, label: c.label, network: c.network, group: c.group })),
         ps5Public: {
           consoleStatus: ps5Config.emergencyOffline ? 'maintenance' : ps5Config.consoleStatus,
           emergencyOffline: ps5Config.emergencyOffline,
@@ -1091,6 +1108,7 @@ async function handler(req, res) {
           order.cryptoPayAmount = np.cryptoPayAmount;
           order.cryptoPayCurrency = np.cryptoPayCurrency;
           order.cryptoNetwork = np.cryptoNetwork;
+          order.cryptoExtraId = np.cryptoExtraId;
         }
         order.pixQrBase64 = await generateQrBase64(order.cryptoWallet);
       }

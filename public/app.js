@@ -39,12 +39,26 @@
     method: 'pix',
     coin: 'usdttrc20',
     cryptoOptions: [
-      { id: 'usdttrc20', label: 'USDT', network: 'TRC20' },
-      { id: 'usdtbsc', label: 'USDT', network: 'BEP20' },
-      { id: 'usdtmatic', label: 'USDT', network: 'Polygon' },
-      { id: 'sol', label: 'SOL', network: 'Solana' },
-      { id: 'btc', label: 'BTC', network: 'Bitcoin' },
-      { id: 'ltc', label: 'LTC', network: 'Litecoin' }
+      { id: 'usdttrc20', label: 'USDT', network: 'TRC20 (Tron)', group: 'Stablecoins' },
+      { id: 'usdtbsc', label: 'USDT', network: 'BEP20 (BSC)', group: 'Stablecoins' },
+      { id: 'usdtmatic', label: 'USDT', network: 'Polygon', group: 'Stablecoins' },
+      { id: 'usdtarb', label: 'USDT', network: 'Arbitrum', group: 'Stablecoins' },
+      { id: 'usdtop', label: 'USDT', network: 'Optimism', group: 'Stablecoins' },
+      { id: 'usdtton', label: 'USDT', network: 'TON', group: 'Stablecoins' },
+      { id: 'usdterc20', label: 'USDT', network: 'ERC20 (Ethereum)', group: 'Stablecoins' },
+      { id: 'usdtavaxc', label: 'USDT', network: 'AVAX C-Chain', group: 'Stablecoins' },
+      { id: 'usdcsol', label: 'USDC', network: 'Solana', group: 'Stablecoins' },
+      { id: 'usdcmatic', label: 'USDC', network: 'Polygon', group: 'Stablecoins' },
+      { id: 'usdcbsc', label: 'USDC', network: 'BEP20 (BSC)', group: 'Stablecoins' },
+      { id: 'usdcarb', label: 'USDC', network: 'Arbitrum', group: 'Stablecoins' },
+      { id: 'usdcop', label: 'USDC', network: 'Optimism', group: 'Stablecoins' },
+      { id: 'usdc', label: 'USDC', network: 'ERC20 (Ethereum)', group: 'Stablecoins' },
+      { id: 'btc', label: 'BTC', network: 'Bitcoin', group: 'Populares' },
+      { id: 'eth', label: 'ETH', network: 'Ethereum', group: 'Populares' },
+      { id: 'ltc', label: 'LTC', network: 'Litecoin', group: 'Populares' },
+      { id: 'trx', label: 'TRX', network: 'Tron (TRC20)', group: 'Populares' },
+      { id: 'bnbbsc', label: 'BNB', network: 'BSC (BEP20)', group: 'Populares' },
+      { id: 'ton', label: 'TON', network: 'TON Network', group: 'Populares' }
     ],
     bumpPrice: 9.9,
     cryptoRate: 0.15,
@@ -457,20 +471,45 @@
   }
 
   function renderCryptoCoins() {
-    const wrap = $('coins');
-    if (!wrap) return;
-    wrap.replaceChildren();
-    state.cryptoOptions.forEach((opt) => {
+    const quickWrap = $('coins-quick');
+    const select = $('crypto-select');
+    if (!quickWrap || !select) return;
+
+    const quickIds = ['usdttrc20', 'usdtbsc', 'usdtmatic', 'btc'];
+    quickWrap.replaceChildren();
+    quickIds.forEach((id) => {
+      const opt = state.cryptoOptions.find((c) => c.id === id);
+      if (!opt) return;
       const btn = el('button', `coin ${opt.id === state.coin ? 'is-active' : ''}`);
       btn.type = 'button';
       btn.dataset.coin = opt.id;
-      btn.append(document.createTextNode(opt.label + ' '), el('small', '', opt.network));
+      btn.append(document.createTextNode(opt.label + ' '), el('small', '', opt.network.split(' ')[0]));
       btn.addEventListener('click', () => {
         state.coin = opt.id;
         renderCheckout();
       });
-      wrap.append(btn);
+      quickWrap.append(btn);
     });
+
+    select.replaceChildren();
+    const groups = {};
+    state.cryptoOptions.forEach((opt) => {
+      const g = opt.group || 'Moedas';
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(opt);
+    });
+    Object.keys(groups).forEach((gName) => {
+      const og = document.createElement('optgroup');
+      og.label = gName;
+      groups[gName].forEach((opt) => {
+        const o = document.createElement('option');
+        o.value = opt.id;
+        o.textContent = `${opt.label} — Rede ${opt.network}`;
+        og.append(o);
+      });
+      select.append(og);
+    });
+    select.value = state.coin;
   }
 
   function renderCheckout() {
@@ -481,6 +520,14 @@
     $$('input[name="pay"]').forEach((r) => (r.checked = r.value === state.method));
     $('coins').classList.toggle('hidden', !isCrypto());
     $$('[data-coin]').forEach((b) => b.classList.toggle('is-active', b.dataset.coin === state.coin));
+    const selEl = $('crypto-select');
+    if (selEl && selEl.value !== state.coin) selEl.value = state.coin;
+
+    const selCoin = state.cryptoOptions.find((x) => x.id === state.coin) || { label: state.coin.toUpperCase(), network: '' };
+    const warnEl = $('crypto-network-warn');
+    if (warnEl) {
+      warnEl.textContent = `⚠️ Envie ${selCoin.label} apenas na rede ${selCoin.network} para evitar perda de fundos.`;
+    }
 
     $('bump-price').textContent = '+ ' + money(c.bumpPix);
     $('r-name').textContent = c.pkg.name;
@@ -493,9 +540,9 @@
     $('r-crypto').textContent = '- ' + money(c.discount);
     $('r-time').textContent = duration(c.minutes);
     $('r-total').textContent = money(c.total);
-    const selCoin = state.cryptoOptions.find((x) => x.id === state.coin) || { label: state.coin.toUpperCase(), network: '' };
+    const selCoin2 = state.cryptoOptions.find((x) => x.id === state.coin) || { label: state.coin.toUpperCase(), network: '' };
     $('r-usdt').classList.toggle('hidden', !isCrypto());
-    $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (${selCoin.label} · ${selCoin.network})`;
+    $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (${selCoin2.label} · ${selCoin2.network})`;
 
     const offline = !!(state.pub && state.pub.emergencyOffline);
     const queued = state.pub && (state.pub.activePlayer || state.pub.consoleStatus === 'maintenance');
@@ -639,6 +686,15 @@
       ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}${netSuffix}`
       : 'PIX copia e cola';
     $('o-code').value = order.paymentCode || '';
+    const extraBox = $('o-extra-box');
+    const extraInput = $('o-extra-id');
+    if (order.isCrypto && order.cryptoExtraId) {
+      extraInput.value = order.cryptoExtraId;
+      extraBox.classList.remove('hidden');
+    } else {
+      extraBox.classList.add('hidden');
+      extraInput.value = '';
+    }
     const qrBox = $('o-qr-box');
     const qrImg = $('o-qr-img');
     if (order.pixQrBase64) {
@@ -821,6 +877,24 @@
     $('chk-bump').addEventListener('change', (e) => {
       state.bump = e.target.checked;
       renderCheckout();
+    });
+
+    $('crypto-select').addEventListener('change', (e) => {
+      state.coin = e.target.value;
+      renderCheckout();
+    });
+
+    $('btn-copy-extra').addEventListener('click', async () => {
+      const input = $('o-extra-id');
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand('copy');
+      }
+      const btn = $('btn-copy-extra');
+      btn.textContent = 'Copiado';
+      setTimeout(() => (btn.textContent = 'Copiar'), 1800);
     });
 
     $('btn-submit-order').addEventListener('click', () => submitOrder(false));

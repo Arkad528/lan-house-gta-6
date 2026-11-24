@@ -1566,3 +1566,40 @@ a {
 .pay-countdown.is-urgent strong {
   color: var(--red);
 }
+
+/* Seletor completo de Moedas e Redes Crypto */
+.crypto-box {
+  margin-top: 10px;
+  background: rgba(8, 5, 16, 0.45);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.coins-quick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.crypto-select-lbl {
+  margin-bottom: 5px;
+}
+
+.network-warn {
+  font-size: 0.72rem;
+  color: var(--gold);
+  margin-top: 7px;
+  line-height: 1.35;
+}
+
+.extra-id-box {
+  margin-top: 10px;
+}
+
+@media (max-width: 480px) {
+  .coins-quick {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

@@ -248,16 +248,14 @@
           <label class="choice" data-method-choice="crypto">
             <input type="radio" name="pay" value="crypto" />
             <strong>Crypto <span class="seg-tag">-15%</span></strong>
-            <small>USDT, BTC ou SOL</small>
+            <small>USDT, USDC, BTC, ETH, LTC, TRX, BNB, TON</small>
           </label>
         </div>
-        <div class="coins hidden" id="coins">
-          <button type="button" class="coin is-active" data-coin="usdttrc20">USDT <small>TRC20</small></button>
-          <button type="button" class="coin" data-coin="usdtbsc">USDT <small>BEP20</small></button>
-          <button type="button" class="coin" data-coin="usdtmatic">USDT <small>Polygon</small></button>
-          <button type="button" class="coin" data-coin="sol">SOL <small>Solana</small></button>
-          <button type="button" class="coin" data-coin="btc">BTC <small>Bitcoin</small></button>
-          <button type="button" class="coin" data-coin="ltc">LTC <small>Litecoin</small></button>
+        <div class="crypto-box hidden" id="coins">
+          <div class="coins-quick" id="coins-quick"></div>
+          <label class="field-label crypto-select-lbl" for="crypto-select">Escolha a moeda e a rede exata:</label>
+          <select id="crypto-select" class="input"></select>
+          <p class="network-warn" id="crypto-network-warn">⚠️ Envie apenas na rede <strong>TRC20 (Tron)</strong> para evitar perda de fundos.</p>
         </div>
       </div>
 
@@ -324,6 +322,13 @@
         <div class="copy-row">
           <input type="text" class="input input-mono" id="o-code" readonly />
           <button type="button" class="btn btn-secondary" id="btn-copy">Copiar</button>
+        </div>
+        <div class="extra-id-box hidden" id="o-extra-box">
+          <span class="field-label">Memo / Tag obrigatório (não esqueça de preencher):</span>
+          <div class="copy-row">
+            <input type="text" class="input input-mono" id="o-extra-id" readonly />
+            <button type="button" class="btn btn-secondary" id="btn-copy-extra">Copiar</button>
+          </div>
         </div>
       </div>
 
