@@ -39,7 +39,7 @@
   </div>
 
   <main class="container main-content">
-    <!-- TELA AO VIVO DO PS5 (Para todo mundo ver o jogo rodando na página inicial!) -->
+    <!-- TELA AO VIVO DO PS5 + PAINEL DE FILA EM TEMPO REAL -->
     <section class="live-stage-section" aria-label="Transmissão Ao Vivo do PS5">
       <div class="live-stage-card">
         <div class="live-stage-topbar">
@@ -48,13 +48,13 @@
             <h2 id="live-stream-title">AO VIVO em viceplay.cloud • Sessão GTA VI PS5 #01</h2>
           </div>
           <div class="live-telemetry-pills">
-            <span class="tele-chip" id="live-player-status">🎮 Console Livre p/ Assumir</span>
+            <span class="tele-chip" id="live-player-status">🟢 Console Livre p/ Assumir Agora</span>
+            <span class="tele-chip" id="live-queue-badge">👥 Fila: <strong id="live-queue-count">0</strong> esperando</span>
             <span class="tele-chip">👁️ <strong id="live-viewers-count">18</strong> assistindo</span>
-            <span class="tele-chip">⚡ 4K 60FPS • 14ms</span>
           </div>
         </div>
 
-        <!-- Tela 16:9 onde o jogo roda ao vivo (Iframe / WebRTC / Stream configurável no /admin) -->
+        <!-- Tela 16:9 onde o jogo roda ao vivo -->
         <div class="live-screen-viewport" id="live-screen-viewport">
           <iframe
             id="ps5-live-iframe"
@@ -64,7 +64,6 @@
             allowfullscreen
           ></iframe>
 
-          <!-- Overlay sutil com botão rápido para assumir o controle -->
           <div class="live-overlay-bar">
             <div class="overlay-info">
               <span class="overlay-tag">MESMA SESSÃO CONTÍNUA</span>
@@ -76,14 +75,34 @@
             </div>
           </div>
         </div>
+
+        <!-- PAINEL DE FILA AO VIVO (Mostra quem está jogando e as pessoas na frente esperando) -->
+        <div class="queue-status-strip" id="queue-status-strip">
+          <div class="queue-strip-main">
+            <div class="queue-now-box">
+              <span class="q-badge-status" id="q-badge-status">🟢 ENTRADA IMEDIATA</span>
+              <div class="q-now-text">
+                <strong id="q-now-headline">Ninguém na frente! Pagou, assumiu o controle na hora.</strong>
+                <span id="q-now-sub">Seu cronômetro só começa a rodar no segundo em que chegar a sua vez no PS5.</span>
+              </div>
+            </div>
+            <div class="queue-wait-metric">
+              <span class="q-metric-lbl">Espera Estimada p/ Entrar:</span>
+              <strong class="q-metric-val" id="q-wait-estimate">0 min (Imediato)</strong>
+            </div>
+          </div>
+
+          <!-- Lista Visual das Pessoas Esperando na Fila (Aparece automaticamente quando há fila) -->
+          <div class="queue-waiting-list hidden" id="queue-waiting-list"></div>
+        </div>
       </div>
     </section>
 
     <!-- Cabeçalho de Preços + Alternador PIX / Crypto -->
     <section class="compact-hero">
       <div class="hero-left">
-        <span class="eyebrow">ESCOLHA SEU TEMPO DE CONTROLE • BASE R$ 1,95 / 10 MIN</span>
-        <h1>Assuma o controle do <span class="gradient-text">GTA VI</span> agora</h1>
+        <span class="eyebrow">AVULSO BASE: R$ 22,75/H (R$ 3,80 / 10 MIN) • QUANTO MAIOR O PACOTE, MAIS TEMPO GRÁTIS</span>
+        <h1>Escolha seu Pacote e Assuma o <span class="gradient-text">GTA VI</span></h1>
       </div>
 
       <!-- Alternador Rápido PIX vs Crypto (-15% OFF) -->
@@ -98,20 +117,22 @@
       </div>
     </section>
 
-    <!-- Cards de Combos (Engenharia McDonald's: Âncora -> Chamariz -> Combo Campeão -> VIP) -->
+    <!-- Cards de Combos com a Nova Tabela Oficial e Gatilhos de Venda para Pacotes Maiores -->
     <section class="pricing-grid" aria-label="Pacotes de Tempo">
-      <!-- Card 1: 10 Min (Âncora R$ 1,95) -->
+      <!-- Card 1: Teste Rápido (10 min - R$ 3,80) -->
       <article class="price-card" data-pkg="trial_10m">
         <div>
-          <span class="tier-tag">TESTE RÁPIDO</span>
-          <h3>10 Minutos</h3>
+          <span class="tier-tag">ENTRADA • 0% DESCONTO</span>
+          <h3>Teste Rápido <span class="sub-mins">(10 min)</span></h3>
           <div class="price-block">
-            <div class="price-main" id="card-price-trial_10m" data-base-price="1.95">R$ 1,95</div>
-            <div class="price-rate">R$ 1,95 / 10 min (Tarifa Base)</div>
+            <div class="price-old">Avulso: R$ 3,79</div>
+            <div class="price-main" id="card-price-trial_10m" data-base-price="3.80">R$ 3,80</div>
+            <div class="price-rate">Sai por <strong>R$ 3,80 / 10m</strong> (R$ 22,80/h)</div>
           </div>
           <ul class="feature-list">
-            <li><span>✓</span> Assuma o controle na hora</li>
-            <li class="muted"><span>✕</span> Sem minutos de bônus</li>
+            <li><span>✓</span> 10 min apenas para testar o controle</li>
+            <li class="muted"><span>✕</span> Preço cheio sem desconto (0,0%)</li>
+            <li class="muted"><span>✕</span> Curto demais p/ completar missão</li>
           </ul>
         </div>
         <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="trial_10m">
@@ -119,63 +140,69 @@
         </button>
       </article>
 
-      <!-- Card 2: 2 Horas (Efeito Chamariz / Decoy - R$ 22,50) -->
-      <article class="price-card decoy-card" data-pkg="decoy_2h">
+      <!-- Card 2: Sessão 1 Hora (60m - R$ 22,75) - Âncora & Chamariz -->
+      <article class="price-card decoy-card" data-pkg="hour_1h">
         <div>
-          <span class="tier-tag">SESSÃO MÉDIA</span>
-          <h3>2 Horas <span class="sub-mins">(120m)</span></h3>
+          <span class="tier-tag">TARIFA BASE • 0% DESCONTO</span>
+          <h3>Sessão 1 Hora <span class="sub-mins">(60m)</span></h3>
           <div class="price-block">
-            <div class="price-old">De R$ 23,40</div>
-            <div class="price-main" id="card-price-decoy_2h" data-base-price="22.50">R$ 22,50</div>
-            <div class="price-rate">Sai a R$ 1,87 / 10 min</div>
+            <div class="price-old">Tarifa Avulsa Padrão</div>
+            <div class="price-main" id="card-price-hour_1h" data-base-price="22.75">R$ 22,75</div>
+            <div class="price-rate">Sai por <strong>R$ 3,79 / 10m</strong> (R$ 22,75/h)</div>
           </div>
           <div class="upsell-nudge">
-            🍟 Por só <strong>+R$ 2,40</strong> você leva o <strong>Combo 3 Horas (+75 min extras!)</strong>
+            🔥 <strong>Gatilho de Combo:</strong> No <strong>Combo 2h10</strong> sua hora cai para <strong>R$ 20,72/h</strong> e você ganha <strong>+10 min grátis (R$ 4,39 de economia)!</strong>
           </div>
+          <ul class="feature-list">
+            <li><span>✓</span> 60 minutos na sessão contínua</li>
+            <li class="muted"><span>✕</span> Sem minutos grátis de bônus</li>
+          </ul>
         </div>
-        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="decoy_2h">
-          Escolher 2 Horas
+        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="hour_1h">
+          Escolher 1 Hora
         </button>
       </article>
 
-      <!-- Card 3: 3 Horas (O "Big Mac Combo" - R$ 24,90 com +15m grátis) -->
-      <article class="price-card featured-card active-card" data-pkg="combo_3h">
-        <div class="popular-ribbon">🔥 MAIS VENDIDO • MELHOR ESCOLHA</div>
+      <!-- Card 3: Combo Heist Leonida (Mais Vendido - 2h10 por R$ 44,90) -->
+      <article class="price-card featured-card active-card" data-pkg="combo_2h">
+        <div class="popular-ribbon">🔥 MAIS VENDIDO • ECONOMIZE R$ 4,39 (8,9% OFF)</div>
         <div>
           <span class="tier-tag tag-gold">COMBO HEIST LEONIDA</span>
-          <h3>3 Horas <span class="bonus-inline">+15m Grátis</span></h3>
+          <h3>2 Horas <span class="bonus-inline">+10m Grátis</span></h3>
           <div class="price-block">
-            <div class="price-old">Avulso: R$ 35,10</div>
-            <div class="price-main" id="card-price-combo_3h" data-base-price="24.90">R$ 24,90</div>
-            <div class="price-rate text-green">Cai para <strong>R$ 1,28 / 10 min</strong> (-34%)</div>
+            <div class="price-old">Avulso (2h10): R$ 49,29</div>
+            <div class="price-main" id="card-price-combo_2h" data-base-price="44.90">R$ 44,90</div>
+            <div class="price-rate text-green">Cai p/ <strong>R$ 3,45 / 10m</strong> • <strong>R$ 20,72/h</strong></div>
           </div>
           <ul class="feature-list">
-            <li><span>★</span> <strong>195 min contínuos</strong> na sessão</li>
-            <li><span>★</span> Prioridade máxima sem fila</li>
+            <li><span>★</span> <strong>130 min totais</strong> (2h + 10m de presente)</li>
+            <li><span>★</span> <strong>Economia real de R$ 4,39</strong> (8,9% OFF)</li>
+            <li><span>★</span> Tempo ideal para fazer golpes completos</li>
           </ul>
         </div>
-        <button type="button" class="btn-select-pkg btn-featured" data-select-pkg="combo_3h">
+        <button type="button" class="btn-select-pkg btn-featured" data-select-pkg="combo_2h">
           Combo Selecionado ✓
         </button>
       </article>
 
-      <!-- Card 4: 6 Horas (Maratona VIP - R$ 38,90 com +30m grátis) -->
-      <article class="price-card" data-pkg="pass_6h">
+      <!-- Card 4: Passaporte Madrugada (4h25 por R$ 86,90) -->
+      <article class="price-card" data-pkg="pass_4h">
         <div>
-          <span class="tier-tag tag-cyan">PASSAPORTE MADRUGADA</span>
-          <h3>6 Horas <span class="bonus-inline">+30m Grátis</span></h3>
+          <span class="tier-tag tag-cyan">MAIOR DESCONTO • 13,5% OFF</span>
+          <h3>Passaporte 4h <span class="bonus-inline">+25m Grátis</span></h3>
           <div class="price-block">
-            <div class="price-old">Avulso: R$ 70,20</div>
-            <div class="price-main" id="card-price-pass_6h" data-base-price="38.90">R$ 38,90</div>
-            <div class="price-rate text-green">Cai para <strong>R$ 1,00 / 10 min</strong> (-49%)</div>
+            <div class="price-old">Avulso (4h25): R$ 100,48</div>
+            <div class="price-main" id="card-price-pass_4h" data-base-price="86.90">R$ 86,90</div>
+            <div class="price-rate text-green">Cai p/ <strong>R$ 3,28 / 10m</strong> • <strong>R$ 19,68/h</strong></div>
           </div>
           <ul class="feature-list">
-            <li><span>✓</span> <strong>390 min direto</strong> na mesma sessão</li>
-            <li><span>✓</span> 4K HDR Ultra + Suporte VIP</li>
+            <li><span>✓</span> <strong>265 min contínuos</strong> (4h + 25m grátis)</li>
+            <li><span>✓</span> <strong>Você embolsa R$ 13,58 de desconto!</strong></li>
+            <li><span>✓</span> Menor custo por hora do site (R$ 19,68/h)</li>
           </ul>
         </div>
-        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="pass_6h">
-          Escolher 6 Horas
+        <button type="button" class="btn-select-pkg btn-outline" data-select-pkg="pass_4h">
+          Escolher 4h25
         </button>
       </article>
     </section>
@@ -186,15 +213,15 @@
       <div class="calc-panel">
         <div class="slider-header">
           <div>
-            <span class="eyebrow">AJUSTE SEU TEMPO (OU USE OS COMBOS ACIMA)</span>
+            <span class="eyebrow">SIMULADOR DE TEMPO & ECONOMIA PROGRESSIVA</span>
             <div class="time-row">
-              <span class="slider-time-big" id="slider-time-display">3h 00min</span>
-              <span class="slider-bonus-tag" id="slider-bonus-display">+15 min bônus grátis</span>
+              <span class="slider-time-big" id="slider-time-display">2h 00min</span>
+              <span class="slider-bonus-tag" id="slider-bonus-display">+10 min grátis</span>
             </div>
           </div>
           <div class="slider-rate-box">
-            <span class="rate-lbl">Preço por 10 min:</span>
-            <span class="rate-val" id="slider-rate-10m">R$ 1,28</span>
+            <span class="rate-lbl">Sai por 10m / Hora:</span>
+            <span class="rate-val" id="slider-rate-10m">R$ 3,45 / 10m (R$ 20,72/h)</span>
           </div>
         </div>
 
@@ -202,56 +229,55 @@
           type="range"
           id="time-slider"
           min="10"
-          max="360"
+          max="240"
           step="10"
-          value="180"
+          value="120"
           aria-label="Selecionar tempo em minutos"
         />
 
         <div class="slider-Ticks">
-          <span>10m (R$1,95)</span>
-          <span>1h (R$11,70)</span>
-          <span>2h (R$22,50)</span>
-          <span class="tick-highlight">★ 3h Combo (R$24,90)</span>
-          <span>6h VIP (R$38,90)</span>
+          <span>10m (R$3,80)</span>
+          <span>1h (R$22,75)</span>
+          <span class="tick-highlight">★ 2h10 Combo (R$44,90)</span>
+          <span>4h25 VIP (R$86,90)</span>
         </div>
 
-        <!-- Gatilho Dinâmico McDonald's -->
+        <!-- Gatilho Dinâmico para Comprar Pacotes Maiores -->
         <div class="smart-upsell-alert" id="smart-upsell-box">
           <div class="upsell-icon">🍟</div>
           <div class="upsell-text" id="smart-upsell-text">
-            <strong>Combo 3 Horas Ativo!</strong> Você economiza <strong>R$ 10,20</strong> e ganha <strong>+15 min grátis</strong>.
+            <strong>Combo Heist Leonida Ativo!</strong> Você economiza <strong>R$ 4,39 (8,9% OFF)</strong> e ganha <strong>+10 min grátis</strong>.
           </div>
           <button type="button" class="btn-upsell-jump hidden" id="btn-upsell-upgrade">
-            Aplicar Combo
+            Subir p/ Combo
           </button>
         </div>
 
-        <!-- Order Bump de 1 Clique ("Batata Grande por +R$ 3,50") -->
+        <!-- Order Bump de 1 Clique (+30 Minutos Extras na Mesma Sessão) -->
         <label class="order-bump-card" for="chk-order-bump">
           <input type="checkbox" id="chk-order-bump" />
           <div class="bump-content">
             <div class="bump-header">
-              <span class="bump-badge">OFERTA DE 1 CLIQUE • 40% OFF</span>
-              <span class="bump-price" id="bump-price-display">+ R$ 3,50</span>
+              <span class="bump-badge">OFERTA DE CHECKOUT • 1 CLIQUE</span>
+              <span class="bump-price" id="bump-price-display">+ R$ 9,90</span>
             </div>
-            <h4>Adicionar +30 Minutos Extras na Mesma Sessão</h4>
-            <p>De R$ 5,85 por apenas <strong>R$ 3,50</strong>. Garanta meia hora extra direto na sua sessão atual para não parar no meio da missão!</p>
+            <h4>Adicionar +30 Minutos Extras Direto na Sua Sessão</h4>
+            <p>No preço avulso 30 minutos custam R$ 11,38. Adicione agora por apenas <strong>R$ 9,90</strong> e não corra o risco do seu tempo acabar no meio da fuga!</p>
           </div>
         </label>
       </div>
 
-      <!-- Direita: Checkout Rápido (Login + Pix/Crypto + Botão Jogar) -->
+      <!-- Direita: Checkout Rápido (Login + Pix/Crypto + Botão Jogar/Entrar na Fila) -->
       <aside class="checkout-panel">
         <div class="checkout-header">
-          <h3>Liberar Controle do PS5</h3>
+          <h3 id="checkout-panel-title">Liberar Controle do PS5</h3>
           <span class="secure-pill">🔒 Anti-Fraude Ativo</span>
         </div>
 
         <!-- 1. Conta rápida -->
         <div class="checkout-step">
           <div id="checkout-auth-prompt" class="checkout-auth-box">
-            <span class="auth-hint">1. Vincule seu Discord ou Google para liberar sua cota e o PIN da sessão:</span>
+            <span class="auth-hint">1. Vincule seu Discord ou Google para garantir sua vaga e receber o PIN:</span>
             <div class="checkout-auth-btns">
               <button type="button" class="btn-auth-full btn-discord" id="chk-btn-discord">
                 Conectar Discord
@@ -303,31 +329,31 @@
         <!-- Resumo Final Direto -->
         <div class="receipt-box">
           <div class="receipt-row">
-            <span id="receipt-pkg-name">Combo 3 Horas (+15m Grátis)</span>
-            <span id="receipt-pkg-price">R$ 24,90</span>
+            <span id="receipt-pkg-name">Combo Heist Leonida (2h10)</span>
+            <span id="receipt-pkg-price">R$ 44,90</span>
           </div>
           <div class="receipt-row" id="receipt-bonus-row">
-            <span class="text-green">Bônus do Combo (+15 min)</span>
+            <span class="text-green">Bônus do Pacote (+10 min)</span>
             <span class="text-green">GRÁTIS</span>
           </div>
           <div class="receipt-row hidden" id="receipt-bump-row">
             <span>Boost +30 Minutos Extras</span>
-            <span id="receipt-bump-val">+ R$ 3,50</span>
+            <span id="receipt-bump-val">+ R$ 9,90</span>
           </div>
           <div class="receipt-row hidden text-green" id="receipt-crypto-row">
             <span>Desconto Crypto (15% OFF)</span>
-            <span id="receipt-crypto-discount">- R$ 3,74</span>
+            <span id="receipt-crypto-discount">- R$ 6,74</span>
           </div>
           <div class="receipt-divider"></div>
           <div class="receipt-total-row">
             <div>
-              <span class="total-lbl">Tempo Liberado</span>
-              <strong class="total-time-val" id="receipt-total-time">3h 15min (195 min)</strong>
+              <span class="total-lbl">Tempo Total Liberado</span>
+              <strong class="total-time-val" id="receipt-total-time">2h 10min (130 min)</strong>
             </div>
             <div class="total-price-col">
               <span class="total-lbl">Total a Pagar</span>
-              <strong class="total-price-val" id="receipt-total-price">R$ 24,90</strong>
-              <span class="total-usdt-val hidden" id="receipt-total-usdt">≈ 4.23 USDT</span>
+              <strong class="total-price-val" id="receipt-total-price">R$ 44,90</strong>
+              <span class="total-usdt-val hidden" id="receipt-total-usdt">≈ 7.63 USDT</span>
             </div>
           </div>
         </div>
@@ -346,7 +372,7 @@
         <h3 id="auth-modal-title">Vincular Conta</h3>
         <button type="button" class="btn-close-modal" id="btn-close-auth">✕</button>
       </div>
-      <p class="modal-desc">Digite seu usuário para vincular sua cota de tempo e receber o PIN de acesso ao PS5:</p>
+      <p class="modal-desc">Digite seu usuário para garantir sua posição e receber o PIN de acesso ao PS5:</p>
       <form id="auth-form">
         <input type="hidden" id="auth-provider-input" value="discord" />
         <label class="form-label" for="auth-handle-input" id="auth-handle-label">Seu Discord</label>
@@ -364,13 +390,13 @@
     </div>
   </div>
 
-  <!-- Modal Fatura PIX / Crypto + PIN do PS5 -->
+  <!-- Modal Fatura PIX / Crypto + PIN ou Posição na Fila -->
   <div class="modal-backdrop hidden" id="order-modal" role="dialog" aria-modal="true">
     <div class="modal-card order-modal-card">
       <div class="modal-header">
         <div>
           <span class="badge-live">PEDIDO VALIDADO</span>
-          <h3 id="order-modal-title">Fatura #VC-0000</h3>
+          <h3 id="order-modal-title">Fatura #VP-0000</h3>
         </div>
         <button type="button" class="btn-close-modal" id="btn-close-order">✕</button>
       </div>
@@ -378,15 +404,15 @@
       <div class="order-summary-strip">
         <div>
           <span class="strip-lbl">Pacote</span>
-          <strong id="modal-pkg-name">Combo 3 Horas</strong>
+          <strong id="modal-pkg-name">Combo Heist (2h10)</strong>
         </div>
         <div>
           <span class="strip-lbl">Tempo Total</span>
-          <strong id="modal-total-time" class="text-green">195 min</strong>
+          <strong id="modal-total-time" class="text-green">130 min</strong>
         </div>
         <div>
           <span class="strip-lbl">Total</span>
-          <strong id="modal-final-price">R$ 24,90</strong>
+          <strong id="modal-final-price">R$ 44,90</strong>
         </div>
       </div>
 
@@ -399,14 +425,15 @@
       </div>
 
       <div class="pin-preview-box">
-        <span class="pin-title">🎮 PIN PS5 Remote Play & Link Direto:</span>
+        <span class="pin-title" id="modal-pin-box-title">🎮 PIN PS5 Remote Play & Status da Vaga:</span>
         <div class="pin-digits" id="modal-access-pin">••••••</div>
+        <div id="modal-queue-feedback" class="modal-queue-feedback hidden"></div>
         <a href="#" target="_blank" id="modal-parsec-link" class="parsec-direct-link hidden">🚀 Abrir Conexão Direta Parsec/PS5</a>
         <span class="pin-sub" id="modal-user-bound">Conta: —</span>
       </div>
 
       <button type="button" class="btn-primary btn-full" id="btn-simulate-paid">
-        Simular Pagamento Confirmado e Assumir PS5
+        Simular Pagamento Confirmado
       </button>
     </div>
   </div>

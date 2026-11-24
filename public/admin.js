@@ -1,5 +1,5 @@
 /**
- * ViceCloud PS5 - Painel de Administração (/admin)
+ * viceplay.cloud - Painel de Administração (/admin)
  * Acesso: Usuário 5288 | Senha 5288
  */
 
@@ -76,21 +76,29 @@
     document.getElementById('cfg-wallet-sol').value = c.walletSol || '';
 
     document.getElementById('cfg-price-10m').value = p.packages.trial_10m.priceBRL;
-    document.getElementById('cfg-price-2h').value = p.packages.decoy_2h.priceBRL;
-    document.getElementById('cfg-price-3h').value = p.packages.combo_3h.priceBRL;
-    document.getElementById('cfg-price-6h').value = p.packages.pass_6h.priceBRL;
+    document.getElementById('cfg-price-1h').value = p.packages.hour_1h.priceBRL;
+    document.getElementById('cfg-price-2h').value = p.packages.combo_2h.priceBRL;
+    document.getElementById('cfg-price-4h').value = p.packages.pass_4h.priceBRL;
     document.getElementById('cfg-price-bump').value = p.bumpPriceBRL;
 
-    renderActivePlayer(c.activePlayer);
+    renderActivePlayerAndQueue(c.activePlayer, data.queueSummary);
     renderOrdersList(data.ordersList || []);
   }
 
-  function renderActivePlayer(activePlayer) {
+  function renderActivePlayerAndQueue(activePlayer, queueSummary) {
     const lbl = document.getElementById('admin-active-player-label');
     if (activePlayer) {
       lbl.textContent = `${activePlayer.userHandle} (${activePlayer.provider.toUpperCase()}) • ${formatDurationSeconds(activePlayer.remainingSeconds)}`;
     } else {
       lbl.textContent = 'Nenhum (Console Livre)';
+    }
+
+    const qLbl = document.getElementById('admin-queue-count-label');
+    if (qLbl && queueSummary) {
+      qLbl.textContent =
+        queueSummary.queueOnlyCount > 0
+          ? `${queueSummary.queueOnlyCount} esperando na fila (~${queueSummary.estimatedWaitMinutesForNewPlayer}m total)`
+          : '0 esperando na fila';
     }
   }
 
@@ -101,6 +109,13 @@
       return;
     }
 
+    const statusMap = {
+      active: '🟢 Jogando Agora',
+      queued: '⏳ Na Fila',
+      completed: '✓ Concluído',
+      pending: 'Aguardando Pgto'
+    };
+
     const rows = orders
       .map(
         (o) => `
@@ -108,7 +123,7 @@
         <div><strong>#${o.orderId}</strong> • ${o.userHandle} (${o.userProvider})</div>
         <div>${o.packageName} (${o.totalMinutes} min)</div>
         <div class="text-green">R$ ${o.finalPriceBRL.toFixed(2)} (${o.paymentMethod.toUpperCase()})</div>
-        <div>Status: <strong>${o.status === 'active' ? '🟢 Jogando' : '⏳ Aguardando'}</strong></div>
+        <div>Status: <strong>${statusMap[o.status] || o.status}</strong></div>
       </div>
     `
       )
@@ -135,9 +150,9 @@
       },
       prices: {
         trial_10m: parseFloat(document.getElementById('cfg-price-10m').value),
-        decoy_2h: parseFloat(document.getElementById('cfg-price-2h').value),
-        combo_3h: parseFloat(document.getElementById('cfg-price-3h').value),
-        pass_6h: parseFloat(document.getElementById('cfg-price-6h').value),
+        hour_1h: parseFloat(document.getElementById('cfg-price-1h').value),
+        combo_2h: parseFloat(document.getElementById('cfg-price-2h').value),
+        pass_4h: parseFloat(document.getElementById('cfg-price-4h').value),
         bumpPriceBRL: parseFloat(document.getElementById('cfg-price-bump').value)
       },
       action: extraAction
@@ -155,7 +170,7 @@
 
       if (res.ok) {
         const data = await res.json();
-        renderActivePlayer(data.ps5Config.activePlayer);
+        renderActivePlayerAndQueue(data.ps5Config.activePlayer, data.queueSummary);
         document.getElementById('cfg-console-status').value = data.ps5Config.consoleStatus;
         toastEl.classList.remove('hidden');
         setTimeout(() => toastEl.classList.add('hidden'), 3500);
@@ -201,6 +216,7 @@
 
     document.getElementById('btn-save-all').addEventListener('click', () => saveAllConfig(null));
     document.getElementById('btn-admin-kick').addEventListener('click', () => saveAllConfig('kick_player'));
+    document.getElementById('btn-admin-clear-queue').addEventListener('click', () => saveAllConfig('clear_queue'));
     document.getElementById('btn-admin-add15').addEventListener('click', () => saveAllConfig('add_15m'));
   });
 })();

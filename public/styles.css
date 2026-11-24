@@ -1399,3 +1399,141 @@ h1, h2, h3, h4, .brand-name, .price-main, .slider-time-big {
 .live-stage-section {
   padding-top: 8px;
 }
+
+
+/* =========================================================
+   PAINEL DE FILA EM TEMPO REAL (FIFO) NA PÁGINA INICIAL
+   ========================================================= */
+
+.queue-status-strip {
+  margin-top: 12px;
+  background: rgba(13, 5, 23, 0.72);
+  border: 1px solid rgba(255, 42, 133, 0.35);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.queue-strip-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.queue-now-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.q-badge-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.q-badge-free {
+  background: rgba(0, 255, 157, 0.14);
+  border: 1px solid rgba(0, 255, 157, 0.45);
+  color: var(--accent-green);
+}
+
+.q-badge-busy {
+  background: rgba(255, 138, 0, 0.18);
+  border: 1px solid rgba(255, 138, 0, 0.55);
+  color: var(--accent-gold);
+}
+
+.q-now-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.q-now-text strong {
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.q-now-text span {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.queue-wait-metric {
+  text-align: right;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.q-metric-lbl {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.q-metric-val {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.96rem;
+  color: var(--accent-cyan);
+}
+
+.queue-waiting-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 42, 133, 0.25);
+}
+
+.queue-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(24, 10, 42, 0.9);
+  border: 1px solid rgba(255, 42, 133, 0.35);
+  padding: 6px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+}
+
+.queue-person-chip.active-now-chip {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 240, 255, 0.1);
+}
+
+.qp-pos {
+  font-weight: 800;
+  font-size: 0.68rem;
+  color: var(--accent-gold);
+}
+
+.active-now-chip .qp-pos {
+  color: var(--accent-cyan);
+}
+
+.qp-name {
+  color: var(--text-primary);
+}
+
+.qp-time {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.modal-queue-feedback {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--accent-gold);
+  line-height: 1.4;
+}

@@ -1,6 +1,6 @@
 /**
  * viceplay.cloud - Lan House Digital GTA VI (PS5)
- * Servidor Backend + Painel Admin (/admin) + Live Stream PS5
+ * Servidor Backend + Fila em Tempo Real (FIFO) + Painel Admin (/admin) + Live Stream PS5
  * Credenciais Admin: Usuário 5288 | Senha 5288
  */
 
@@ -14,52 +14,150 @@ const CSRF_SECRET = process.env.CSRF_SECRET || 'viceplay-cloud-ps5-hmac-secret-2
 const ADMIN_USER = '5288';
 const ADMIN_PASS = '5288';
 
-// Estado Dinâmico do PS5 e Configurações Editáveis no /admin
+// Estado Dinâmico do PS5, Transmissão e Fila Real (FIFO - Ordem de Chegada, sem furar fila)
 const ps5Config = {
-  consoleName: 'viceplay.cloud • PS5 Pro #01 (4K 60fps)',
+  consoleName: 'viceplay.cloud • PS5 #01',
   consoleStatus: 'online', // 'online' | 'busy' | 'maintenance'
   ps5LocalIp: '192.168.1.150',
   remotePlayPin: '48291033',
-  connectionMode: 'parsec_chiaki', // 'parsec_chiaki' | 'webrtc_capture' | 'ps_remote_direct'
+  connectionMode: 'parsec_chiaki',
   parsecInviteUrl: 'https://parsec.gg/g/viceplay-cloud-ps5',
-  streamMode: 'youtube', // 'youtube' | 'twitch' | 'hls_webrtc'
+  streamMode: 'youtube',
   streamSourceUrl: 'https://www.youtube.com/embed/QdBZY2fkU-0?autoplay=1&mute=1&loop=1&playlist=QdBZY2fkU-0&controls=1&rel=0',
   streamTitle: 'AO VIVO em viceplay.cloud • Sessão GTA VI PS5 #01',
   viewersCount: 18,
-  activePlayer: null, // { userHandle, provider, remainingSeconds, orderId, startedAt }
+  activePlayer: null, // { orderId, userHandle, provider, remainingSeconds, totalMinutes, startedAt }
+  queue: [], // Array FIFO: [{ orderId, userHandle, provider, totalMinutes, joinedAt }]
   pixKey: 'pix@viceplay.cloud',
   walletUsdt: '0x71C89A4B29F10cE9824F1B3bA91820E77c9f2A1',
   walletBtc: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
   walletSol: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
 };
 
-// Tabela de Preços Editável pelo /admin (Inicia com Base R$ 1,95 / 10 min)
+// Nova Tabela Oficial de Preços (Base Avulso: R$ 22,75/h | R$ 3,80 por 10 min)
 const packagesConfig = {
-  baseRate10m: 1.95,
-  bumpPriceBRL: 3.50,
+  baseRate10m: 3.80,
+  hourlyBaseBRL: 22.75,
+  bumpPriceBRL: 9.90, // +30 Minutos Extras na mesma sessão (Avulso R$ 11,38 -> R$ 9,90 = 13% OFF)
   cryptoDiscountRate: 0.15,
   packages: {
-    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 Min)', minutes: 10, priceBRL: 1.95, originalPriceBRL: 1.95, bonusMinutes: 0 },
-    hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, priceBRL: 11.70, originalPriceBRL: 11.70, bonusMinutes: 0 },
-    decoy_2h: { id: 'decoy_2h', name: 'Sessão 2 Horas', minutes: 120, priceBRL: 22.50, originalPriceBRL: 23.40, bonusMinutes: 0 },
-    combo_3h: { id: 'combo_3h', name: 'Combo 3 Horas (+15m Grátis)', minutes: 180, priceBRL: 24.90, originalPriceBRL: 35.10, bonusMinutes: 15 },
-    pass_6h: { id: 'pass_6h', name: 'Maratona 6 Horas (+30m Grátis)', minutes: 360, priceBRL: 38.90, originalPriceBRL: 70.20, bonusMinutes: 30 }
+    trial_10m: {
+      id: 'trial_10m',
+      name: 'Teste Rápido (10 min)',
+      minutes: 10,
+      bonusMinutes: 0,
+      totalMinutes: 10,
+      priceBRL: 3.80,
+      originalPriceBRL: 3.79,
+      rate10m: 3.80,
+      rateHour: 22.80,
+      discountPct: '0,0%',
+      savingsBRL: 0
+    },
+    hour_1h: {
+      id: 'hour_1h',
+      name: 'Sessão 1 Hora (60m)',
+      minutes: 60,
+      bonusMinutes: 0,
+      totalMinutes: 60,
+      priceBRL: 22.75,
+      originalPriceBRL: 22.75,
+      rate10m: 3.79,
+      rateHour: 22.75,
+      discountPct: '0,0%',
+      savingsBRL: 0
+    },
+    combo_2h: {
+      id: 'combo_2h',
+      name: 'Combo Heist Leonida (2h10)',
+      minutes: 120,
+      bonusMinutes: 10,
+      totalMinutes: 130,
+      priceBRL: 44.90,
+      originalPriceBRL: 49.29,
+      rate10m: 3.45,
+      rateHour: 20.72,
+      discountPct: '8,9%',
+      savingsBRL: 4.39
+    },
+    pass_4h: {
+      id: 'pass_4h',
+      name: 'Passaporte Madrugada (4h25)',
+      minutes: 240,
+      bonusMinutes: 25,
+      totalMinutes: 265,
+      priceBRL: 86.90,
+      originalPriceBRL: 100.48,
+      rate10m: 3.28,
+      rateHour: 19.68,
+      discountPct: '13,5%',
+      savingsBRL: 13.58
+    }
   }
 };
 
 const ordersList = [];
 const rateLimitMap = new Map();
 
-// Cronômetro em tempo real da sessão ativa do PS5
+// Promove automaticamente o primeiro da fila quando o console fica livre
+function advanceQueueIfNeeded() {
+  if (!ps5Config.activePlayer && ps5Config.queue.length > 0 && ps5Config.consoleStatus !== 'maintenance') {
+    const nextInLine = ps5Config.queue.shift();
+    ps5Config.activePlayer = {
+      orderId: nextInLine.orderId,
+      userHandle: nextInLine.userHandle,
+      provider: nextInLine.provider,
+      totalMinutes: nextInLine.totalMinutes,
+      remainingSeconds: nextInLine.totalMinutes * 60,
+      startedAt: new Date().toISOString()
+    };
+    ps5Config.consoleStatus = 'busy';
+    const order = ordersList.find((o) => o.orderId === nextInLine.orderId);
+    if (order) order.status = 'active';
+  } else if (!ps5Config.activePlayer && ps5Config.consoleStatus === 'busy') {
+    ps5Config.consoleStatus = 'online';
+  }
+}
+
+// Cronômetro em tempo real da sessão ativa + avanço automático da fila
 setInterval(() => {
   if (ps5Config.activePlayer && ps5Config.activePlayer.remainingSeconds > 0) {
     ps5Config.activePlayer.remainingSeconds -= 1;
     if (ps5Config.activePlayer.remainingSeconds <= 0) {
+      const finishedOrder = ordersList.find((o) => o.orderId === ps5Config.activePlayer.orderId);
+      if (finishedOrder) finishedOrder.status = 'completed';
       ps5Config.activePlayer = null;
-      ps5Config.consoleStatus = 'online';
+      advanceQueueIfNeeded();
     }
   }
 }, 1000);
+
+function getQueueWaitSummary() {
+  const activeSeconds = ps5Config.activePlayer ? ps5Config.activePlayer.remainingSeconds : 0;
+  const queuedSeconds = ps5Config.queue.reduce((acc, item) => acc + item.totalMinutes * 60, 0);
+  const totalWaitSeconds = activeSeconds + queuedSeconds;
+
+  let cumulativeSeconds = activeSeconds;
+  const detailedQueue = ps5Config.queue.map((item, idx) => {
+    const waitBeforeThisMinutes = Math.ceil(cumulativeSeconds / 60);
+    cumulativeSeconds += item.totalMinutes * 60;
+    return {
+      position: idx + 1,
+      orderId: item.orderId,
+      userHandle: item.userHandle,
+      provider: item.provider,
+      totalMinutes: item.totalMinutes,
+      estimatedWaitMinutes: waitBeforeThisMinutes
+    };
+  });
+
+  return {
+    peopleAheadCount: (ps5Config.activePlayer ? 1 : 0) + ps5Config.queue.length,
+    queueOnlyCount: ps5Config.queue.length,
+    estimatedWaitMinutesForNewPlayer: Math.ceil(totalWaitSeconds / 60),
+    items: detailedQueue
+  };
+}
 
 function generateSignedToken(prefix = 'csrf') {
   const ts = Date.now().toString(36);
@@ -91,7 +189,7 @@ function applySecurityHeaders(res) {
   );
 }
 
-function checkRateLimit(ip, maxRequests = 90) {
+function checkRateLimit(ip, maxRequests = 100) {
   const now = Date.now();
   const record = rateLimitMap.get(ip) || { count: 0, windowStart: now };
   if (now - record.windowStart > 60_000) {
@@ -143,32 +241,31 @@ function calculateServerSideOrder({ packageId, customMinutes, includeBump, payme
     bonusMinutes = pkg.bonusMinutes;
     packageName = pkg.name;
   } else if (typeof customMinutes === 'number' && Number.isInteger(customMinutes)) {
-    const m = Math.max(10, Math.min(360, Math.round(customMinutes / 10) * 10));
+    const m = Math.max(10, Math.min(240, Math.round(customMinutes / 10) * 10));
     baseMinutes = m;
-    const p10 = pkgs.trial_10m.priceBRL;
-    const p60 = pkgs.hour_1h.priceBRL;
-    const p120 = pkgs.decoy_2h.priceBRL;
-    const p180 = pkgs.combo_3h.priceBRL;
-    const p360 = pkgs.pass_6h.priceBRL;
+    const p10 = pkgs.trial_10m.priceBRL; // 3.80
+    const p60 = pkgs.hour_1h.priceBRL;   // 22.75
+    const p120 = pkgs.combo_2h.priceBRL; // 44.90 (+10m grátis)
+    const p240 = pkgs.pass_4h.priceBRL;  // 86.90 (+25m grátis)
 
-    if (m <= 60) {
-      basePriceBRL = (m / 10) * p10;
+    if (m === 10) {
+      basePriceBRL = p10;
       bonusMinutes = 0;
-    } else if (m <= 120) {
+    } else if (m <= 60) {
+      basePriceBRL = p10 + ((m - 10) / 50) * (p60 - p10);
+      bonusMinutes = 0;
+    } else if (m < 120) {
       basePriceBRL = p60 + ((m - 60) / 60) * (p120 - p60);
       bonusMinutes = 0;
-    } else if (m < 180) {
-      basePriceBRL = p120 + ((m - 120) / 60) * (p180 - p120);
-      bonusMinutes = 0;
-    } else if (m === 180) {
-      basePriceBRL = p180;
-      bonusMinutes = 15;
-    } else if (m < 360) {
-      basePriceBRL = p180 + ((m - 180) / 180) * (p360 - p180);
-      bonusMinutes = 15;
+    } else if (m === 120) {
+      basePriceBRL = p120;
+      bonusMinutes = 10;
+    } else if (m < 240) {
+      basePriceBRL = p120 + ((m - 120) / 120) * (p240 - p120);
+      bonusMinutes = 10;
     } else {
-      basePriceBRL = p360;
-      bonusMinutes = 30;
+      basePriceBRL = p240;
+      bonusMinutes = 25;
     }
 
     basePriceBRL = Math.round(basePriceBRL * 100) / 100;
@@ -212,7 +309,7 @@ async function requestHandler(req, res) {
 
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-  // 1. Configuração Pública + Estado da Live Screen do PS5
+  // 1. Configuração Pública + Estado da Live Screen + Fila em Tempo Real
   if (req.method === 'GET' && parsedUrl.pathname === '/api/config') {
     const token = generateSignedToken('csrf');
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -229,7 +326,8 @@ async function requestHandler(req, res) {
           streamSourceUrl: ps5Config.streamSourceUrl,
           streamTitle: ps5Config.streamTitle,
           viewersCount: ps5Config.viewersCount,
-          activePlayer: ps5Config.activePlayer
+          activePlayer: ps5Config.activePlayer,
+          queueSummary: getQueueWaitSummary()
         }
       })
     );
@@ -294,25 +392,59 @@ async function requestHandler(req, res) {
     }
   }
 
-  // 3. Confirmar Pagamento / Iniciar Sessão no PS5
+  // 3. Confirmar Pagamento -> Se PS5 livre, entra na hora; se ocupado, entra na Fila FIFO!
   if (req.method === 'POST' && parsedUrl.pathname === '/api/activate-session') {
     try {
       const body = await parseJsonBody(req);
       const orderId = sanitizeString(body.orderId || '', 20);
       const order = ordersList.find((o) => o.orderId === orderId);
-      if (order) {
-        order.status = 'active';
-        ps5Config.activePlayer = {
-          orderId: order.orderId,
-          userHandle: order.userHandle,
-          provider: order.userProvider,
-          remainingSeconds: order.totalMinutes * 60,
-          startedAt: new Date().toISOString()
-        };
-        ps5Config.consoleStatus = 'busy';
+
+      if (!order) {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: 'Pedido não encontrado.' }));
       }
+
+      // Evitar duplicidade
+      const alreadyActive = ps5Config.activePlayer && ps5Config.activePlayer.orderId === orderId;
+      const alreadyQueued = ps5Config.queue.find((q) => q.orderId === orderId);
+
+      if (!alreadyActive && !alreadyQueued) {
+        if (!ps5Config.activePlayer && ps5Config.consoleStatus !== 'maintenance') {
+          order.status = 'active';
+          ps5Config.activePlayer = {
+            orderId: order.orderId,
+            userHandle: order.userHandle,
+            provider: order.userProvider,
+            totalMinutes: order.totalMinutes,
+            remainingSeconds: order.totalMinutes * 60,
+            startedAt: new Date().toISOString()
+          };
+          ps5Config.consoleStatus = 'busy';
+        } else {
+          order.status = 'queued';
+          ps5Config.queue.push({
+            orderId: order.orderId,
+            userHandle: order.userHandle,
+            provider: order.userProvider,
+            totalMinutes: order.totalMinutes,
+            joinedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      const queueSummary = getQueueWaitSummary();
+      const myQueueEntry = queueSummary.items.find((i) => i.orderId === orderId) || null;
+
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ ok: true, activePlayer: ps5Config.activePlayer }));
+      return res.end(
+        JSON.stringify({
+          ok: true,
+          mode: myQueueEntry ? 'queued' : 'active',
+          queueEntry: myQueueEntry,
+          activePlayer: ps5Config.activePlayer,
+          queueSummary
+        })
+      );
     } catch (e) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ error: 'Falha ao ativar sessão.' }));
@@ -352,13 +484,14 @@ async function requestHandler(req, res) {
       JSON.stringify({
         ok: true,
         ps5Config,
+        queueSummary: getQueueWaitSummary(),
         packagesConfig,
         ordersList
       })
     );
   }
 
-  // 6. API de Salvar Configurações do PS5, Stream, Preços e Carteiras no /admin
+  // 6. API de Salvar Configurações do PS5, Fila e Preços no /admin
   if (req.method === 'POST' && parsedUrl.pathname === '/api/admin/save') {
     const authHeader = req.headers['x-admin-token'];
     if (!verifySignedToken(authHeader, 'admin')) {
@@ -388,20 +521,20 @@ async function requestHandler(req, res) {
 
       if (body.prices) {
         const p = body.prices;
-        if (typeof p.trial_10m === 'number' && p.trial_10m > 0) {
-          packagesConfig.packages.trial_10m.priceBRL = p.trial_10m;
-          packagesConfig.baseRate10m = p.trial_10m;
-          packagesConfig.packages.hour_1h.priceBRL = Math.round(p.trial_10m * 6 * 100) / 100;
-        }
-        if (typeof p.decoy_2h === 'number' && p.decoy_2h > 0) packagesConfig.packages.decoy_2h.priceBRL = p.decoy_2h;
-        if (typeof p.combo_3h === 'number' && p.combo_3h > 0) packagesConfig.packages.combo_3h.priceBRL = p.combo_3h;
-        if (typeof p.pass_6h === 'number' && p.pass_6h > 0) packagesConfig.packages.pass_6h.priceBRL = p.pass_6h;
+        if (typeof p.trial_10m === 'number' && p.trial_10m > 0) packagesConfig.packages.trial_10m.priceBRL = p.trial_10m;
+        if (typeof p.hour_1h === 'number' && p.hour_1h > 0) packagesConfig.packages.hour_1h.priceBRL = p.hour_1h;
+        if (typeof p.combo_2h === 'number' && p.combo_2h > 0) packagesConfig.packages.combo_2h.priceBRL = p.combo_2h;
+        if (typeof p.pass_4h === 'number' && p.pass_4h > 0) packagesConfig.packages.pass_4h.priceBRL = p.pass_4h;
         if (typeof p.bumpPriceBRL === 'number' && p.bumpPriceBRL >= 0) packagesConfig.bumpPriceBRL = p.bumpPriceBRL;
       }
 
       if (body.action === 'kick_player') {
         ps5Config.activePlayer = null;
-        ps5Config.consoleStatus = 'online';
+        advanceQueueIfNeeded();
+      }
+
+      if (body.action === 'clear_queue') {
+        ps5Config.queue = [];
       }
 
       if (body.action === 'add_15m' && ps5Config.activePlayer) {
@@ -409,7 +542,14 @@ async function requestHandler(req, res) {
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ ok: true, ps5Config, packagesConfig }));
+      return res.end(
+        JSON.stringify({
+          ok: true,
+          ps5Config,
+          queueSummary: getQueueWaitSummary(),
+          packagesConfig
+        })
+      );
     } catch (err) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ error: 'Erro ao salvar configurações.' }));

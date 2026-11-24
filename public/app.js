@@ -1,5 +1,5 @@
 /**
- * ViceCloud PS5 - Frontend Principal + Live Stream Stage + Sincronia com /admin
+ * viceplay.cloud - Frontend Principal + Fila em Tempo Real (FIFO) + Nova Tabela de Preços
  */
 
 (function () {
@@ -7,7 +7,7 @@
 
   const state = {
     csrfToken: null,
-    selectedPackageId: 'combo_3h',
+    selectedPackageId: 'combo_2h',
     customMinutes: null,
     includeBump: false,
     paymentMethod: 'pix', // 'pix' | 'usdt' | 'btc' | 'sol'
@@ -15,17 +15,53 @@
     showCryptoInCards: false,
     user: null,
     pendingCheckoutAfterAuth: false,
-    bumpPriceBRL: 3.50,
+    bumpPriceBRL: 9.90,
     cryptoDiscountRate: 0.15,
     ps5Public: null
   };
 
+  // Nova Tabela Oficial (Avulso R$ 22,75/h | R$ 3,80 por 10m)
   const PACKAGES_CLIENT = {
-    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 Min)', minutes: 10, priceBRL: 1.95, bonusMinutes: 0 },
-    hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, priceBRL: 11.70, bonusMinutes: 0 },
-    decoy_2h: { id: 'decoy_2h', name: 'Sessão 2 Horas', minutes: 120, priceBRL: 22.50, bonusMinutes: 0 },
-    combo_3h: { id: 'combo_3h', name: 'Combo 3 Horas (+15m Grátis)', minutes: 180, priceBRL: 24.90, bonusMinutes: 15 },
-    pass_6h: { id: 'pass_6h', name: 'Maratona 6 Horas (+30m Grátis)', minutes: 360, priceBRL: 38.90, bonusMinutes: 30 }
+    trial_10m: {
+      id: 'trial_10m',
+      name: 'Teste Rápido (10 min)',
+      minutes: 10,
+      bonusMinutes: 0,
+      priceBRL: 3.80,
+      originalPriceBRL: 3.79,
+      savingsBRL: 0,
+      discountPct: '0,0%'
+    },
+    hour_1h: {
+      id: 'hour_1h',
+      name: 'Sessão 1 Hora (60m)',
+      minutes: 60,
+      bonusMinutes: 0,
+      priceBRL: 22.75,
+      originalPriceBRL: 22.75,
+      savingsBRL: 0,
+      discountPct: '0,0%'
+    },
+    combo_2h: {
+      id: 'combo_2h',
+      name: 'Combo Heist Leonida (2h10)',
+      minutes: 120,
+      bonusMinutes: 10,
+      priceBRL: 44.90,
+      originalPriceBRL: 49.29,
+      savingsBRL: 4.39,
+      discountPct: '8,9%'
+    },
+    pass_4h: {
+      id: 'pass_4h',
+      name: 'Passaporte Madrugada (4h25)',
+      minutes: 240,
+      bonusMinutes: 25,
+      priceBRL: 86.90,
+      originalPriceBRL: 100.48,
+      savingsBRL: 13.58,
+      discountPct: '13,5%'
+    }
   };
 
   const BUMP_MINUTES = 30;
@@ -40,6 +76,12 @@
     if (h === 0) return `${m} min`;
     if (m === 0) return `${h}h 00min`;
     return `${h}h ${m}min`;
+  }
+
+  function maskHandle(handle) {
+    if (!handle) return 'Jogador';
+    if (handle.length <= 4) return handle;
+    return handle.slice(0, 4) + '***' + handle.slice(-2);
   }
 
   async function initConfig() {
@@ -59,7 +101,7 @@
         if (typeof data.cryptoDiscountRate === 'number') state.cryptoDiscountRate = data.cryptoDiscountRate;
         if (data.ps5Public) {
           state.ps5Public = data.ps5Public;
-          renderLiveStage(data.ps5Public);
+          renderLiveStageAndQueue(data.ps5Public);
         }
       }
     } catch (err) {}
@@ -67,7 +109,7 @@
     renderAll();
   }
 
-  function renderLiveStage(pub) {
+  function renderLiveStageAndQueue(pub) {
     if (!pub) return;
     const titleEl = document.getElementById('live-stream-title');
     if (titleEl && pub.streamTitle) titleEl.textContent = pub.streamTitle;
@@ -81,26 +123,94 @@
     if (viewersEl && pub.viewersCount) viewersEl.textContent = pub.viewersCount;
 
     const playerStatusEl = document.getElementById('live-player-status');
-    const topStatusText = document.getElementById('top-status-text');
+    const qCountEl = document.getElementById('live-queue-count');
+    const qBadgeStatus = document.getElementById('q-badge-status');
+    const qHeadline = document.getElementById('q-now-headline');
+    const qSub = document.getElementById('q-now-sub');
+    const qWaitEstimate = document.getElementById('q-wait-estimate');
+    const qWaitingList = document.getElementById('queue-waiting-list');
+    const submitBtn = document.getElementById('btn-submit-order');
 
-    if (pub.activePlayer) {
-      const minsLeft = Math.ceil(pub.activePlayer.remainingSeconds / 60);
-      if (playerStatusEl) {
-        playerStatusEl.textContent = `🎮 Jogando agora: ${pub.activePlayer.userHandle} (${minsLeft}m restantes)`;
-      }
-      if (topStatusText) {
-        topStatusText.textContent = `Em Sessão: ${pub.activePlayer.userHandle} • ${minsLeft}m restantes`;
-      }
-    } else if (pub.consoleStatus === 'maintenance') {
+    const qSummary = pub.queueSummary || {
+      peopleAheadCount: 0,
+      queueOnlyCount: 0,
+      estimatedWaitMinutesForNewPlayer: 0,
+      items: []
+    };
+
+    if (qCountEl) qCountEl.textContent = String(qSummary.peopleAheadCount);
+
+    if (pub.consoleStatus === 'maintenance') {
       if (playerStatusEl) playerStatusEl.textContent = '🔧 Console em Manutenção';
-      if (topStatusText) topStatusText.textContent = 'PS5 em Manutenção';
+      if (qBadgeStatus) {
+        qBadgeStatus.textContent = '🔧 MANUTENÇÃO';
+        qBadgeStatus.className = 'q-badge-status q-badge-busy';
+      }
+      if (qHeadline) qHeadline.textContent = 'Console em manutenção rápida.';
+      if (qWaitEstimate) qWaitEstimate.textContent = 'Pausado';
+      if (qWaitingList) qWaitingList.classList.add('hidden');
+    } else if (pub.activePlayer) {
+      const minsLeftActive = Math.max(1, Math.ceil(pub.activePlayer.remainingSeconds / 60));
+      if (playerStatusEl) {
+        playerStatusEl.textContent = `🎮 No controle: ${maskHandle(pub.activePlayer.userHandle)} (${minsLeftActive}m restantes)`;
+      }
+      if (qBadgeStatus) {
+        qBadgeStatus.textContent = `⏳ ${qSummary.peopleAheadCount} NA FRENTE`;
+        qBadgeStatus.className = 'q-badge-status q-badge-busy';
+      }
+      if (qHeadline) {
+        qHeadline.textContent =
+          qSummary.queueOnlyCount > 0
+            ? `1 jogando agora + ${qSummary.queueOnlyCount} na fila de espera. Garanta o próximo lugar!`
+            : `1 jogador em sessão agora (termina em ~${minsLeftActive} min). Reserve para ser o próximo!`;
+      }
+      if (qSub) {
+        qSub.textContent = 'Ordem 100% justa de chegada: seu tempo comprado só começa a contar quando o PS5 passar para você.';
+      }
+      if (qWaitEstimate) {
+        qWaitEstimate.textContent = `~${qSummary.estimatedWaitMinutesForNewPlayer} min`;
+      }
+      if (submitBtn) {
+        submitBtn.textContent = `Garantir Minha Vaga na Fila (#${qSummary.peopleAheadCount + 1})`;
+      }
+
+      // Renderizar os chips de quem está jogando + quem está na fila esperando
+      if (qWaitingList) {
+        qWaitingList.classList.remove('hidden');
+        const activeChip = `
+          <div class="queue-person-chip active-now-chip">
+            <span class="qp-pos">🎮 JOGANDO AGORA</span>
+            <strong class="qp-name">${maskHandle(pub.activePlayer.userHandle)}</strong>
+            <span class="qp-time">Libera em ~${minsLeftActive} min</span>
+          </div>
+        `;
+        const waitingChips = (qSummary.items || [])
+          .map(
+            (item) => `
+          <div class="queue-person-chip">
+            <span class="qp-pos">#${item.position} DA FILA</span>
+            <strong class="qp-name">${maskHandle(item.userHandle)}</strong>
+            <span class="qp-time">Sessão de ${item.totalMinutes}m (Entra em ~${item.estimatedWaitMinutes}m)</span>
+          </div>
+        `
+          )
+          .join('');
+        qWaitingList.innerHTML = activeChip + waitingChips;
+      }
     } else {
       if (playerStatusEl) playerStatusEl.textContent = '🟢 Console Livre p/ Assumir Agora';
-      if (topStatusText) topStatusText.textContent = 'PS5 Online • 14ms • Livre p/ Jogar';
+      if (qBadgeStatus) {
+        qBadgeStatus.textContent = '🟢 FILA ZERO • ENTRADA IMEDIATA';
+        qBadgeStatus.className = 'q-badge-status q-badge-free';
+      }
+      if (qHeadline) qHeadline.textContent = 'Ninguém na frente! Pagou, assumiu o controle do PS5 na hora.';
+      if (qSub) qSub.textContent = 'Seu cronômetro só começa a rodar no momento em que o seu acesso é liberado.';
+      if (qWaitEstimate) qWaitEstimate.textContent = '0 min (Imediato)';
+      if (qWaitingList) qWaitingList.classList.add('hidden');
+      if (submitBtn) submitBtn.textContent = 'Gerar PIX / Crypto e Assumir o Controle Agora';
     }
 
-    // Atualizar atributos base dos cards caso o admin tenha alterado preços
-    ['trial_10m', 'decoy_2h', 'combo_3h', 'pass_6h'].forEach((id) => {
+    ['trial_10m', 'hour_1h', 'combo_2h', 'pass_4h'].forEach((id) => {
       const el = document.getElementById(`card-price-${id}`);
       if (el && PACKAGES_CLIENT[id]) {
         el.setAttribute('data-base-price', String(PACKAGES_CLIENT[id].priceBRL));
@@ -115,7 +225,7 @@
 
   function loadSavedUser() {
     try {
-      const raw = sessionStorage.getItem('vicecloud_user');
+      const raw = sessionStorage.getItem('viceplay_user');
       if (raw) state.user = JSON.parse(raw);
     } catch (e) {}
   }
@@ -123,7 +233,7 @@
   function saveUser(provider, handle) {
     state.user = { provider, handle };
     try {
-      sessionStorage.setItem('vicecloud_user', JSON.stringify(state.user));
+      sessionStorage.setItem('viceplay_user', JSON.stringify(state.user));
     } catch (e) {}
     renderAuthUI();
   }
@@ -131,22 +241,21 @@
   function logoutUser() {
     state.user = null;
     try {
-      sessionStorage.removeItem('vicecloud_user');
+      sessionStorage.removeItem('viceplay_user');
     } catch (e) {}
     renderAuthUI();
   }
 
   function computeCurrentSelection() {
-    const p10 = PACKAGES_CLIENT.trial_10m.priceBRL;
-    const p60 = PACKAGES_CLIENT.hour_1h.priceBRL;
-    const p120 = PACKAGES_CLIENT.decoy_2h.priceBRL;
-    const p180 = PACKAGES_CLIENT.combo_3h.priceBRL;
-    const p360 = PACKAGES_CLIENT.pass_6h.priceBRL;
+    const p10 = PACKAGES_CLIENT.trial_10m.priceBRL;   // 3.80
+    const p60 = PACKAGES_CLIENT.hour_1h.priceBRL;     // 22.75
+    const p120 = PACKAGES_CLIENT.combo_2h.priceBRL;   // 44.90 (+10m grátis = 130m)
+    const p240 = PACKAGES_CLIENT.pass_4h.priceBRL;    // 86.90 (+25m grátis = 265m)
 
-    let baseMinutes = 180;
-    let basePrice = p180;
-    let bonusMinutes = 15;
-    let title = PACKAGES_CLIENT.combo_3h.name;
+    let baseMinutes = 120;
+    let basePrice = p120;
+    let bonusMinutes = 10;
+    let title = PACKAGES_CLIENT.combo_2h.name;
 
     if (state.selectedPackageId && PACKAGES_CLIENT[state.selectedPackageId]) {
       const pkg = PACKAGES_CLIENT[state.selectedPackageId];
@@ -158,44 +267,44 @@
       const m = state.customMinutes;
       baseMinutes = m;
 
-      if (m <= 60) {
-        basePrice = (m / 10) * p10;
+      if (m === 10) {
+        basePrice = p10;
         bonusMinutes = 0;
-      } else if (m <= 120) {
+      } else if (m <= 60) {
+        basePrice = p10 + ((m - 10) / 50) * (p60 - p10);
+        bonusMinutes = 0;
+      } else if (m < 120) {
         basePrice = p60 + ((m - 60) / 60) * (p120 - p60);
         bonusMinutes = 0;
-      } else if (m < 180) {
-        basePrice = p120 + ((m - 120) / 60) * (p180 - p120);
-        bonusMinutes = 0;
-      } else if (m === 180) {
-        basePrice = p180;
-        bonusMinutes = 15;
-      } else if (m < 360) {
-        basePrice = p180 + ((m - 180) / 180) * (p360 - p180);
-        bonusMinutes = 15;
+      } else if (m === 120) {
+        basePrice = p120;
+        bonusMinutes = 10;
+      } else if (m < 240) {
+        basePrice = p120 + ((m - 120) / 120) * (p240 - p120);
+        bonusMinutes = 10;
       } else {
-        basePrice = p360;
-        bonusMinutes = 30;
+        basePrice = p240;
+        bonusMinutes = 25;
       }
       basePrice = Math.round(basePrice * 100) / 100;
       title = `Sessão Personalizada (${m} min)`;
     }
 
+    // Gatilhos Mentais Fortes para Comprar Pacotes Maiores
     let upsellMessage = '';
     let upsellTargetPkg = null;
 
-    if (baseMinutes < 120) {
-      upsellMessage = `🍔 <strong>Gatilho de Economia:</strong> No avulso sai a ${formatBRL(p10)} / 10m. No <strong>Combo 3 Horas</strong> cai para <strong>${formatBRL(p180 / 19.5)} / 10m + 15 min grátis!</strong>`;
-      upsellTargetPkg = 'combo_3h';
-    } else if (baseMinutes >= 120 && baseMinutes < 180) {
-      const diff = Math.max(0.40, p180 - basePrice);
-      upsellMessage = `🍟 <strong>Efeito McDonald's:</strong> Por apenas <strong>+${formatBRL(diff)}</strong> você leva o <strong>Combo 3 Horas (195 min direto na sessão)</strong>!`;
-      upsellTargetPkg = 'combo_3h';
-    } else if (baseMinutes >= 180 && baseMinutes < 360) {
-      upsellMessage = `🔥 <strong>Combo 3h Ativo (+15m grátis)!</strong> Quer dobrar para <strong>6 Horas + 30m grátis</strong> por só +${formatBRL(Math.max(1, p360 - basePrice))}?`;
-      upsellTargetPkg = 'pass_6h';
+    if (baseMinutes < 60) {
+      upsellMessage = `⚠️ <strong>10 min passam voando nas cutscenes!</strong> Suba para o <strong>Combo Heist 2h10</strong> para derrubar sua hora de R$ 22,80/h para <strong>R$ 20,72/h + 10 min grátis (R$ 4,39 de economia)</strong>!`;
+      upsellTargetPkg = 'combo_2h';
+    } else if (baseMinutes >= 60 && baseMinutes < 120) {
+      upsellMessage = `🍟 <strong>Efeito Combo:</strong> Em 1 hora você paga o preço cheio (R$ 22,75/h e 0% de desconto). No <strong>Combo 2h10</strong> você ganha <strong>+10 min grátis</strong>, derruba a hora para <strong>R$ 20,72/h</strong> e economiza <strong>R$ 4,39</strong>!`;
+      upsellTargetPkg = 'combo_2h';
+    } else if (baseMinutes >= 120 && baseMinutes < 240) {
+      upsellMessage = `🔥 <strong>Combo Heist 2h10 Ativo (R$ 4,39 de economia + 10m grátis)!</strong> Quer o maior desconto do site? No <strong>Passaporte 4h25</strong> a hora cai para <strong>R$ 19,68/h</strong> e você economiza <strong>R$ 13,58 (+25m grátis)</strong>!`;
+      upsellTargetPkg = 'pass_4h';
     } else {
-      upsellMessage = `👑 <strong>Maratona 6 Horas Ativa!</strong> Menor preço por minuto (+30 min grátis inclusos na mesma sessão).`;
+      upsellMessage = `👑 <strong>Passaporte Madrugada 4h25 Ativo!</strong> Você destravou <strong>13,5% OFF (R$ 13,58 de economia real)</strong> + <strong>25 minutos grátis</strong> (menor valor por hora: R$ 19,68/h).`;
       upsellTargetPkg = null;
     }
 
@@ -207,6 +316,7 @@
     const totalBRL = Math.round((subtotal - cryptoDiscount) * 100) / 100;
     const totalMinutes = baseMinutes + bonusMinutes + bumpMinutes;
     const effectiveRate10m = totalBRL / (totalMinutes / 10);
+    const effectiveRateHour = effectiveRate10m * 6;
 
     return {
       title,
@@ -222,6 +332,7 @@
       totalUSDT: (totalBRL / 5.0).toFixed(2),
       totalMinutes,
       effectiveRate10m,
+      effectiveRateHour,
       upsellMessage,
       upsellTargetPkg
     };
@@ -249,9 +360,9 @@
         } else {
           const labels = {
             trial_10m: 'Escolher 10 Min',
-            decoy_2h: 'Escolher 2 Horas',
-            combo_3h: 'Quero o Combo 3h',
-            pass_6h: 'Escolher 6 Horas'
+            hour_1h: 'Escolher 1 Hora',
+            combo_2h: 'Quero o Combo 2h10',
+            pass_4h: 'Escolher 4h25'
           };
           btn.textContent = labels[pkgId] || 'Escolher';
         }
@@ -298,13 +409,13 @@
       bonusTag.classList.add('hidden');
     }
 
-    document.getElementById('slider-rate-10m').textContent = formatBRL(calc.effectiveRate10m);
+    document.getElementById('slider-rate-10m').textContent = `${formatBRL(calc.effectiveRate10m)} / 10m (${formatBRL(calc.effectiveRateHour)}/h)`;
     document.getElementById('smart-upsell-text').innerHTML = calc.upsellMessage;
 
     const btnUpgrade = document.getElementById('btn-upsell-upgrade');
     if (calc.upsellTargetPkg) {
       btnUpgrade.classList.remove('hidden');
-      btnUpgrade.textContent = calc.upsellTargetPkg === 'combo_3h' ? 'Pegar Combo 3h' : 'Pegar 6 Horas';
+      btnUpgrade.textContent = calc.upsellTargetPkg === 'combo_2h' ? 'Pegar Combo 2h10' : 'Pegar Passaporte 4h25';
       btnUpgrade.onclick = () => {
         state.selectedPackageId = calc.upsellTargetPkg;
         state.customMinutes = null;
@@ -325,7 +436,7 @@
     const bonusRow = document.getElementById('receipt-bonus-row');
     if (calc.bonusMinutes > 0) {
       bonusRow.classList.remove('hidden');
-      bonusRow.querySelector('span:first-child').textContent = `Bônus do Combo (+${calc.bonusMinutes} min)`;
+      bonusRow.querySelector('span:first-child').textContent = `Bônus do Pacote (+${calc.bonusMinutes} min)`;
     } else {
       bonusRow.classList.add('hidden');
     }
@@ -447,20 +558,17 @@
 
     document.getElementById('modal-access-pin').textContent = '••••••';
     const parsecLink = document.getElementById('modal-parsec-link');
+    const queueFeedback = document.getElementById('modal-queue-feedback');
     parsecLink.classList.add('hidden');
+    queueFeedback.classList.add('hidden');
     document.getElementById('modal-user-bound').textContent = `Conta: ${order.userHandle} (${order.userProvider.toUpperCase()})`;
 
     const btnSim = document.getElementById('btn-simulate-paid');
-    btnSim.textContent = 'Simular Pagamento Confirmado e Assumir PS5';
+    btnSim.textContent = 'Simular Pagamento Confirmado';
     btnSim.disabled = false;
     btnSim.onclick = async () => {
-      document.getElementById('modal-access-pin').textContent = order.accessPin;
-      if (order.parsecInviteUrl) {
-        parsecLink.href = order.parsecInviteUrl;
-        parsecLink.classList.remove('hidden');
-      }
-      btnSim.textContent = '✓ Controle Liberado! Você está Ao Vivo no PS5!';
       btnSim.disabled = true;
+      btnSim.textContent = 'Confirmando vaga no PS5...';
 
       try {
         const actRes = await fetch('/api/activate-session', {
@@ -468,10 +576,28 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId: order.orderId })
         });
+
         if (actRes.ok) {
+          const actData = await actRes.json();
+          if (actData.mode === 'active') {
+            document.getElementById('modal-access-pin').textContent = order.accessPin;
+            if (order.parsecInviteUrl) {
+              parsecLink.href = order.parsecInviteUrl;
+              parsecLink.classList.remove('hidden');
+            }
+            btnSim.textContent = '✓ Controle Liberado! Você está Ao Vivo no PS5!';
+          } else if (actData.queueEntry) {
+            document.getElementById('modal-access-pin').textContent = `FILA #${actData.queueEntry.position}`;
+            queueFeedback.classList.remove('hidden');
+            queueFeedback.innerHTML = `⏳ Há <strong>${actData.queueEntry.position} pessoa(s)</strong> concluindo a sessão na sua frente.<br>Previsão para liberar seu PIN Automaticamente: <strong>~${actData.queueEntry.estimatedWaitMinutes} min</strong>.`;
+            btnSim.textContent = `✓ Vaga #${actData.queueEntry.position} Garantida na Fila!`;
+          }
           initConfig();
         }
-      } catch (e) {}
+      } catch (e) {
+        document.getElementById('modal-access-pin').textContent = order.accessPin;
+        btnSim.textContent = '✓ Pagamento Confirmado!';
+      }
     };
 
     document.getElementById('order-modal').classList.remove('hidden');
@@ -480,10 +606,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     initConfig();
 
-    // Atualizar status da Live Screen a cada 10s
-    setInterval(initConfig, 10000);
+    setInterval(initConfig, 6000);
 
-    // Botão Tela Cheia da Transmissão do PS5
     const btnFs = document.getElementById('btn-fullscreen-stream');
     if (btnFs) {
       btnFs.addEventListener('click', () => {
@@ -519,9 +643,8 @@
       state.customMinutes = mins;
       if (mins === 10) state.selectedPackageId = 'trial_10m';
       else if (mins === 60) state.selectedPackageId = 'hour_1h';
-      else if (mins === 120) state.selectedPackageId = 'decoy_2h';
-      else if (mins === 180) state.selectedPackageId = 'combo_3h';
-      else if (mins === 360) state.selectedPackageId = 'pass_6h';
+      else if (mins === 120) state.selectedPackageId = 'combo_2h';
+      else if (mins === 240) state.selectedPackageId = 'pass_4h';
       else state.selectedPackageId = null;
       renderAll();
     });
