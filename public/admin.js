@@ -2,8 +2,17 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  let token = sessionStorage.getItem('pg6_admin_token') || null;
+  let csrfToken = null;
+  let isAuthed = false;
+  let formInitialized = false;
   let toastTimer = null;
+
+  const AUTH_ERRORS = {
+    discord_not_configured: 'Configure DISCORD_CLIENT_ID e DISCORD_CLIENT_SECRET no .env / Vercel para logar com Discord.',
+    cancelled: 'Login cancelado.',
+    state: 'Sessão de login expirou. Tente novamente.',
+    failed: 'Falha ao autenticar no Discord. Tente novamente.'
+  };
 
   function toast(msg, type) {
     const t = $('toast');
@@ -28,8 +37,8 @@
 
   async function req(url, options) {
     const headers = { ...(options?.headers || {}) };
-    if (token) headers['X-Admin-Token'] = token;
-    const res = await fetch(url, { ...options, headers });
+    if (csrfToken && options?.method === 'POST') headers['X-CSRF-Token'] = csrfToken;
+    const res = await fetch(url, { credentials: 'same-origin', ...options, headers });
     let data = {};
     try {
       data = await res.json();
@@ -37,31 +46,52 @@
     return { ok: res.ok, status: res.status, data };
   }
 
-  function showLogin() {
-    $('admin-login').classList.remove('hidden');
+  function showGate(mode, message) {
+    isAuthed = false;
+    $('admin-gate').classList.remove('hidden');
     $('admin-dashboard').classList.add('hidden');
     $('btn-admin-logout').classList.add('hidden');
+
+    const denied = mode === 'forbidden';
+    $('gate-denied-pill').classList.toggle('hidden', !denied);
+    $('gate-title').textContent = denied ? 'Acesso negado' : 'Painel do Operador';
+    $('gate-desc').textContent = denied
+      ? 'A conta conectada não está autorizada a acessar o painel administrativo.'
+      : 'Acesso exclusivo para os administradores autorizados via Discord.';
+    $('btn-admin-discord-label').textContent = denied ? 'Trocar conta Discord' : 'Entrar com Discord';
+
+    const errEl = $('gate-error');
+    if (message) {
+      errEl.textContent = message;
+      errEl.classList.remove('hidden');
+    } else {
+      errEl.classList.add('hidden');
+    }
   }
 
   function showDashboard() {
-    $('admin-login').classList.add('hidden');
+    isAuthed = true;
+    $('admin-gate').classList.add('hidden');
     $('admin-dashboard').classList.remove('hidden');
     $('btn-admin-logout').classList.remove('hidden');
   }
 
-  async function loadState() {
-    if (!token) return showLogin();
-    const { ok, data } = await req('/api/admin/state');
+  async function loadState(forceFillForm) {
+    const { ok, status, data } = await req('/api/admin/state');
     if (!ok) {
-      sessionStorage.removeItem('pg6_admin_token');
-      token = null;
-      return showLogin();
+      if (status === 403) return showGate('forbidden');
+      return showGate('login');
     }
-    fill(data);
+    csrfToken = data.csrfToken || csrfToken;
+    if (!formInitialized || forceFillForm) {
+      fillFormFields(data);
+      formInitialized = true;
+    }
+    updateLiveStatus(data);
     showDashboard();
   }
 
-  function fill(data) {
+  function fillFormFields(data) {
     const c = data.ps5Config;
     const p = data.packagesConfig;
 
@@ -103,27 +133,28 @@
     $('cfg-usdt').value = c.walletUsdt || '';
     $('cfg-btc').value = c.walletBtc || '';
     $('cfg-sol').value = c.walletSol || '';
+  }
 
-    // Banner de emergência
+  function updateLiveStatus(data) {
+    const c = data.ps5Config;
+
     $('emergency-banner').classList.toggle('hidden', !c.emergencyOffline);
 
-    // Status OAuth e Pagamento
     const oauthBox = $('oauth-status');
     oauthBox.replaceChildren(
-      el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado (.env)'}`),
-      el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado (.env)'}`),
-      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo (automático)' : 'não configurado'}`),
-      el('span', `pill ${data.nowPayments ? 'pill-green' : 'pill-amber'}`, `NOWPayments Crypto: ${data.nowPayments ? 'ativo (automático)' : 'não configurado'}`),
+      el('span', 'pill pill-green', `Admin: ${data.adminUser?.name || 'Discord'}`),
+      el('span', `pill ${data.providers?.discord ? 'pill-green' : 'pill-amber'}`, `Discord OAuth: ${data.providers?.discord ? 'ativo' : 'não configurado'}`),
+      el('span', `pill ${data.providers?.google ? 'pill-green' : 'pill-amber'}`, `Google OAuth: ${data.providers?.google ? 'ativo' : 'não configurado'}`),
+      el('span', `pill ${data.mercadoPago ? 'pill-green' : 'pill-amber'}`, `Mercado Pago PIX: ${data.mercadoPago ? 'ativo' : 'não configurado'}`),
+      el('span', `pill ${data.nowPayments ? 'pill-green' : 'pill-amber'}`, `NOWPayments Crypto: ${data.nowPayments ? 'ativo' : 'não configurado'}`),
       el('span', `pill ${data.demoMode ? 'pill-cyan' : ''}`, `Modo teste: ${data.demoMode ? 'ligado' : 'desligado'}`)
     );
 
-    // Sessão ativa e fila
     const ap = c.activePlayer;
     $('adm-active').textContent = ap ? `${ap.name} · ${fmtSec(ap.remainingSeconds)}` : 'Nenhum (livre)';
     const q = data.queueSummary || { queueOnlyCount: 0, estimatedWaitMinutesForNewPlayer: 0 };
     $('adm-queue').textContent = q.queueOnlyCount > 0 ? `${q.queueOnlyCount} esperando (~${q.estimatedWaitMinutesForNewPlayer}m)` : '0';
 
-    // Pedidos
     const wrap = $('orders-list');
     wrap.replaceChildren();
     const list = data.orders || [];
@@ -168,7 +199,7 @@
     });
   }
 
-  async function saveConfig() {
+  async function saveConfig(retried) {
     const payload = {
       ps5Config: {
         streamTitle: $('cfg-stream-title').value.trim(),
@@ -203,26 +234,37 @@
       }
     };
 
-    const { ok, data } = await req('/api/admin/save', {
+    const { ok, status, data } = await req('/api/admin/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
+    if (status === 403 && data.error === 'csrf' && !retried) {
+      await loadState(false);
+      return saveConfig(true);
+    }
+
     if (ok) {
       toast('Configurações salvas!', 'success');
-      loadState();
+      loadState(true);
     } else {
       toast(data.error || 'Erro ao salvar.', 'error');
     }
   }
 
-  async function runAction(action, orderId, extra) {
-    const { ok, data } = await req('/api/admin/action', {
+  async function runAction(action, orderId, extra, retried) {
+    const { ok, status, data } = await req('/api/admin/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, orderId, ...(extra || {}) })
     });
+
+    if (status === 403 && data.error === 'csrf' && !retried) {
+      await loadState(false);
+      return runAction(action, orderId, extra, true);
+    }
+
     if (ok) {
       if (data.stoppingProcess) {
         toast('Servidor encerrado em modo de emergência.', 'error');
@@ -236,7 +278,7 @@
           : 'Ação executada!',
         action === 'emergency_shutdown' ? 'error' : 'success'
       );
-      loadState();
+      loadState(false);
     } else {
       toast(data.error || 'Erro ao executar ação.', 'error');
     }
@@ -257,34 +299,35 @@
     document.body.classList.remove('modal-open');
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    loadState();
+  async function loginAdminDiscord() {
+    await req('/auth/logout', { method: 'POST' }).catch(() => {});
+    window.location.href = '/auth/discord?next=/admin';
+  }
 
-    $('admin-login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      $('admin-error').classList.add('hidden');
-      const { ok, data } = await req('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: $('admin-user').value.trim(), password: $('admin-pass').value.trim() })
-      });
-      if (!ok || !data.adminToken) {
-        $('admin-error').textContent = data.error || 'Usuário ou senha incorretos.';
-        $('admin-error').classList.remove('hidden');
-        return;
-      }
-      token = data.adminToken;
-      sessionStorage.setItem('pg6_admin_token', token);
-      loadState();
-    });
+  async function logoutAdmin() {
+    await req('/auth/logout', { method: 'POST' });
+    csrfToken = null;
+    formInitialized = false;
+    showGate('login');
+  }
 
-    $('btn-admin-logout').addEventListener('click', () => {
-      sessionStorage.removeItem('pg6_admin_token');
-      token = null;
-      showLogin();
-    });
+  function checkUrlError() {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get('auth_error');
+    const ok = params.get('login') === 'ok';
+    if (err || ok) history.replaceState(null, '', window.location.pathname);
+    if (err) return AUTH_ERRORS[err] || 'Erro ao fazer login com Discord.';
+    return null;
+  }
 
-    $('btn-save').addEventListener('click', saveConfig);
+  document.addEventListener('DOMContentLoaded', async () => {
+    const urlErr = checkUrlError();
+    await loadState(true);
+    if (urlErr && !isAuthed) showGate('login', urlErr);
+
+    $('btn-admin-discord').addEventListener('click', loginAdminDiscord);
+    $('btn-admin-logout').addEventListener('click', logoutAdmin);
+    $('btn-save').addEventListener('click', () => saveConfig(false));
     document.querySelectorAll('[data-action]').forEach((b) =>
       b.addEventListener('click', () => runAction(b.dataset.action))
     );
@@ -295,6 +338,9 @@
     $('btn-emg-cancel-1').addEventListener('click', closeEmergencyModal);
     $('emergency-modal').addEventListener('mousedown', (e) => {
       if (e.target === $('emergency-modal')) closeEmergencyModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('emergency-modal').classList.contains('hidden')) closeEmergencyModal();
     });
     $('btn-emg-next').addEventListener('click', () => {
       $('emg-step-1').classList.add('hidden');
@@ -316,7 +362,7 @@
     });
 
     setInterval(() => {
-      if (token && !document.hidden) loadState();
+      if (isAuthed && !document.hidden) loadState(false);
     }, 6000);
   });
 })();

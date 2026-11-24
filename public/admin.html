@@ -23,27 +23,24 @@
   </header>
 
   <main class="container">
-    <!-- Login Admin -->
-    <section id="admin-login" class="admin-login">
+    <!-- Gate de Acesso Admin (Apenas Discord IDs autorizados) -->
+    <section id="admin-gate" class="admin-login">
       <div class="modal-card modal-sm">
         <div class="modal-head">
           <div>
-            <h3>Painel do Operador</h3>
-            <p>Acesso restrito para configurar o PS5, fila e pagamentos.</p>
+            <span class="pill pill-red hidden" id="gate-denied-pill">Acesso negado</span>
+            <h3 id="gate-title" class="emg-title">Painel do Operador</h3>
+            <p id="gate-desc">Acesso exclusivo para contas Discord autorizadas.</p>
           </div>
         </div>
-        <form id="admin-login-form" class="stack">
-          <div class="field">
-            <label class="field-label" for="admin-user">Usuário</label>
-            <input type="text" id="admin-user" class="input" required autocomplete="username" />
-          </div>
-          <div class="field">
-            <label class="field-label" for="admin-pass">Senha</label>
-            <input type="password" id="admin-pass" class="input" required autocomplete="current-password" />
-          </div>
-          <p id="admin-error" class="form-error hidden">Usuário ou senha incorretos.</p>
-          <button type="submit" class="btn btn-primary btn-block btn-lg">Entrar no painel</button>
-        </form>
+        <div class="stack">
+          <button type="button" class="btn btn-discord btn-block btn-lg" id="btn-admin-discord">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.43 2.85a13.6 13.6 0 0 0-.62 1.25 18.3 18.3 0 0 0-5.49 0 12.6 12.6 0 0 0-.62-1.25 19.7 19.7 0 0 0-4.89 1.52C.53 9.05-.32 13.58.1 18.06a19.9 19.9 0 0 0 6 3.03c.48-.65.91-1.35 1.27-2.08a12.9 12.9 0 0 1-2-.96l.49-.38c3.93 1.79 8.18 1.79 12.06 0l.49.38c-.64.38-1.31.7-2 .96.36.73.79 1.43 1.27 2.08a19.8 19.8 0 0 0 6-3.03c.5-5.18-.84-9.68-3.55-13.69ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.95-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>
+            <span id="btn-admin-discord-label">Entrar com Discord</span>
+          </button>
+          <a href="/" class="btn btn-secondary btn-block">Voltar para o site</a>
+        </div>
+        <p id="gate-error" class="form-error hidden"></p>
       </div>
     </section>
 

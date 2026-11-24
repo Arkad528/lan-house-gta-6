@@ -31,6 +31,7 @@
   const state = {
     csrf: null,
     user: null,
+    isAdmin: false,
     providers: { discord: false, google: false },
     demoMode: false,
     pkg: 'combo_2h',
@@ -106,6 +107,7 @@
     const { ok, data } = await api('/api/me');
     if (!ok) return;
     state.user = data.user;
+    state.isAdmin = !!data.isAdmin;
     state.providers = data.providers || state.providers;
     state.demoMode = !!data.demoMode;
     renderAuth();
@@ -152,6 +154,7 @@
     const u = state.user;
     $('btn-open-login').classList.toggle('hidden', !!u);
     $('user-chip').classList.toggle('hidden', !u);
+    $('btn-admin-shortcut').classList.toggle('hidden', !(u && state.isAdmin));
     $('checkout-login').classList.toggle('hidden', !!u);
     $('checkout-user').classList.toggle('hidden', !u);
     if (!u) return;
@@ -296,8 +299,13 @@
     $('r-usdt').classList.toggle('hidden', !isCrypto());
     $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (pago em ${state.coin.toUpperCase()})`;
 
+    const offline = !!(state.pub && state.pub.emergencyOffline);
     const queued = state.pub && (state.pub.activePlayer || state.pub.consoleStatus === 'maintenance');
-    $('btn-submit-order').textContent = state.user
+    const submitBtn = $('btn-submit-order');
+    submitBtn.disabled = offline;
+    submitBtn.textContent = offline
+      ? 'Sistema desligado (emergência)'
+      : state.user
       ? `${queued ? 'Garantir vaga na fila' : 'Gerar pagamento'} · ${money(c.total)}`
       : 'Entrar para continuar';
 
@@ -326,6 +334,7 @@
   async function logout() {
     await api('/auth/logout', { method: 'POST' });
     state.user = null;
+    state.isAdmin = false;
     renderAuth();
     renderCheckout();
     toast('Você saiu da conta.');

@@ -31,8 +31,12 @@ const crypto = require('crypto');
 const ENV = {
   PORT: Number(process.env.PORT) || 3000,
   BASE_URL: (process.env.BASE_URL || '').replace(/\/+$/, ''),
-  ADMIN_USER: process.env.ADMIN_USER || '5288',
-  ADMIN_PASS: process.env.ADMIN_PASS || '5288',
+  ADMIN_DISCORD_IDS: new Set(
+    (process.env.ADMIN_DISCORD_IDS || '799731357064233001,359467850748133377')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^\d{15,25}$/.test(s))
+  ),
   DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
   DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
@@ -165,7 +169,15 @@ function getBaseUrl(req) {
   if (ENV.BASE_URL) return ENV.BASE_URL;
   const fwd = ENV.TRUST_PROXY && req.headers['x-forwarded-proto'];
   const proto = fwd ? String(fwd).split(',')[0].trim() : 'http';
-  return `${proto}://${req.headers.host || `localhost:${ENV.PORT}`}`;
+  const rawHost = String(req.headers.host || '').trim();
+  const safeHost = /^[a-zA-Z0-9.-]+(:\d+)?$/.test(rawHost) ? rawHost : `localhost:${ENV.PORT}`;
+  return `${proto === 'https' ? 'https' : 'http'}://${safeHost}`;
+}
+
+function isSameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  return origin === getBaseUrl(req);
 }
 
 function setCookie(req, res, name, value, maxAgeSec) {
@@ -235,20 +247,23 @@ function makeLimiter(windowMs, max) {
 }
 
 const globalLimiter = makeLimiter(60_000, 150);
-const adminLoginLimiter = makeLimiter(15 * 60_000, 8);
 const checkoutLimiter = makeLimiter(60_000, 10);
+const adminActionLimiter = makeLimiter(60_000, 60);
 
 function getSessionUser(req) {
   const data = unsign(parseCookies(req).pg6_session, 'sess');
   return data ? data.u : null;
 }
 
-function issueCsrf() {
-  return sign({ t: 'csrf', n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 2 * 60 * 60 * 1000 });
+function isAdminUser(user) {
+  if (!user || user.provider !== 'discord' || typeof user.uid !== 'string') return false;
+  if (!user.uid.startsWith('discord:')) return false;
+  const discordId = user.uid.slice('discord:'.length);
+  return ENV.ADMIN_DISCORD_IDS.has(discordId);
 }
 
-function isAdmin(req) {
-  return !!unsign(req.headers['x-admin-token'], 'admin');
+function issueCsrf() {
+  return sign({ t: 'csrf', n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 2 * 60 * 60 * 1000 });
 }
 
 // ---------------------------------------------------------------------------
@@ -659,11 +674,12 @@ const OAUTH = {
 
 const providerEnabled = (p) => !!(OAUTH[p] && OAUTH[p].clientId() && OAUTH[p].clientSecret());
 
-function oauthStart(req, res, provider) {
-  if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
+function oauthStart(req, res, provider, nextPath) {
+  const safeNext = nextPath === '/admin' ? '/admin' : '/';
+  if (!providerEnabled(provider)) return redirect(res, `${safeNext}?auth_error=${provider}_not_configured`);
   const cfg = OAUTH[provider];
   const state = crypto.randomBytes(16).toString('hex');
-  setCookie(req, res, 'pg6_oauth', sign({ t: 'oauth', s: state, p: provider, exp: Date.now() + 10 * 60_000 }), 600);
+  setCookie(req, res, 'pg6_oauth', sign({ t: 'oauth', s: state, p: provider, next: safeNext, exp: Date.now() + 10 * 60_000 }), 600);
   const params = new URLSearchParams({
     client_id: cfg.clientId(),
     redirect_uri: `${getBaseUrl(req)}/auth/${provider}/callback`,
@@ -679,11 +695,12 @@ async function oauthCallback(req, res, provider, query) {
   const cfg = OAUTH[provider];
   const saved = unsign(parseCookies(req).pg6_oauth, 'oauth');
   setCookie(req, res, 'pg6_oauth', '', 0);
+  const safeNext = saved && saved.next === '/admin' ? '/admin' : '/';
 
-  if (query.get('error')) return redirect(res, '/?auth_error=cancelled');
-  if (!providerEnabled(provider)) return redirect(res, `/?auth_error=${provider}_not_configured`);
+  if (query.get('error')) return redirect(res, `${safeNext}?auth_error=cancelled`);
+  if (!providerEnabled(provider)) return redirect(res, `${safeNext}?auth_error=${provider}_not_configured`);
   if (!saved || saved.p !== provider || !query.get('state') || !safeEqual(query.get('state'), saved.s)) {
-    return redirect(res, '/?auth_error=state');
+    return redirect(res, `${safeNext}?auth_error=state`);
   }
 
   try {
@@ -711,10 +728,10 @@ async function oauthCallback(req, res, provider, query) {
       avatar: profile.avatar && /^https:\/\//.test(profile.avatar) ? profile.avatar : null
     };
     setCookie(req, res, 'pg6_session', sign({ t: 'sess', u: user, exp: Date.now() + SESSION_TTL_MS }), SESSION_TTL_MS / 1000);
-    redirect(res, '/?login=ok');
+    redirect(res, `${safeNext}?login=ok`);
   } catch (err) {
     console.error('[playgta6] Falha no OAuth:', err.message);
-    redirect(res, '/?auth_error=failed');
+    redirect(res, `${safeNext}?auth_error=failed`);
   }
 }
 
@@ -778,10 +795,23 @@ function serveStatic(res, pathname) {
     }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache'
+      'Cache-Control': rel === '/admin.html' ? 'no-store' : 'no-cache'
     });
     res.end(content);
   });
+}
+
+const ALLOWED_STREAM_HOSTS = new Set(['www.youtube.com', 'www.youtube-nocookie.com', 'player.twitch.tv', 'vdo.ninja']);
+
+function isValidHttpsUrl(raw, allowedHosts) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    if (u.protocol !== 'https:') return false;
+    if (allowedHosts && !allowedHosts.has(u.hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function handler(req, res) {
@@ -797,12 +827,13 @@ async function handler(req, res) {
     // ---------------- Auth ----------------
     const authMatch = p.match(/^\/auth\/(discord|google)(\/callback)?$/);
     if (req.method === 'GET' && authMatch) {
-      return authMatch[2] ? oauthCallback(req, res, authMatch[1], url.searchParams) : oauthStart(req, res, authMatch[1]);
+      return authMatch[2]
+        ? oauthCallback(req, res, authMatch[1], url.searchParams)
+        : oauthStart(req, res, authMatch[1], url.searchParams.get('next'));
     }
 
     if (req.method === 'POST' && p === '/auth/logout') {
-      const origin = req.headers.origin;
-      if (origin && origin !== getBaseUrl(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
+      if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       setCookie(req, res, 'pg6_session', '', 0);
       return sendJson(res, 200, { ok: true });
     }
@@ -810,6 +841,7 @@ async function handler(req, res) {
     if (req.method === 'GET' && p === '/api/me') {
       return sendJson(res, 200, {
         user: user ? { name: user.name, handle: user.handle, avatar: user.avatar, provider: user.provider } : null,
+        isAdmin: isAdminUser(user),
         providers: { discord: providerEnabled('discord'), google: providerEnabled('google') },
         demoMode: isDemoMode()
       });
@@ -839,6 +871,7 @@ async function handler(req, res) {
     }
 
     if (req.method === 'POST' && p === '/api/checkout') {
+      if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (ps5Config.emergencyOffline) return sendJson(res, 503, { error: 'Sistema desligado em modo de emergência. Tente mais tarde.' });
       if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Tente novamente.' });
       if (!user) return sendJson(res, 401, { error: 'login', message: 'Entre com Discord ou Google para continuar.' });
@@ -905,7 +938,8 @@ async function handler(req, res) {
       if (!verifyNowPaymentsIpn(body, req.headers['x-nowpayments-sig'])) {
         return sendJson(res, 403, { error: 'Assinatura IPN inválida.' });
       }
-      const npId = String(body.payment_id || '');
+      const rawNpId = String(body.payment_id || '').trim();
+      const npId = /^[a-zA-Z0-9_-]{4,40}$/.test(rawNpId) ? rawNpId : '';
       const target =
         orders.get(String(body.order_id || '')) ||
         (npId ? [...orders.values()].find((o) => o.npPaymentId === npId) : null);
@@ -921,7 +955,8 @@ async function handler(req, res) {
     if (req.method === 'POST' && p === '/api/webhooks/mercadopago') {
       if (!mpEnabled()) return sendJson(res, 200, { ok: true });
       const body = await readJson(req).catch(() => ({}));
-      const mpId = String(body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id') || '');
+      const rawMpId = String(body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id') || '').trim();
+      const mpId = /^\d{4,25}$/.test(rawMpId) ? rawMpId : '';
       if (mpId) {
         let target = [...orders.values()].find((o) => o.mpPaymentId === mpId);
         if (!target) {
@@ -954,6 +989,7 @@ async function handler(req, res) {
 
     // Simulação de pagamento: só em modo de teste e só para o dono do pedido
     if (req.method === 'POST' && p === '/api/demo/confirm') {
+      if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
       if (!isDemoMode()) return sendJson(res, 403, { error: 'Modo de teste desativado.' });
       if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf' });
       if (!user) return sendJson(res, 401, { error: 'login' });
@@ -964,22 +1000,16 @@ async function handler(req, res) {
       return sendJson(res, 200, { ok: true, order: publicOrder(o) });
     }
 
-    // ---------------- Admin ----------------
-    if (req.method === 'POST' && p === '/api/admin/login') {
-      if (!adminLoginLimiter(ip)) return sendJson(res, 429, { error: 'Muitas tentativas. Aguarde 15 minutos.' });
-      const body = await readJson(req);
-      const okUser = safeEqual(String(body.username || ''), ENV.ADMIN_USER);
-      const okPass = safeEqual(String(body.password || ''), ENV.ADMIN_PASS);
-      if (!okUser || !okPass) return sendJson(res, 401, { error: 'Usuário ou senha incorretos.' });
-      return sendJson(res, 200, { ok: true, adminToken: sign({ t: 'admin', exp: Date.now() + 12 * 60 * 60 * 1000 }) });
-    }
-
+    // ---------------- Admin (exclusivo para os IDs Discord autorizados) ----------------
     if (p.startsWith('/api/admin/')) {
-      if (!isAdmin(req)) return sendJson(res, 401, { error: 'Não autorizado.' });
+      if (!user) return sendJson(res, 401, { error: 'not_logged_in', message: 'Entre com uma conta Discord autorizada.' });
+      if (!isAdminUser(user)) return sendJson(res, 403, { error: 'forbidden', message: 'Sua conta não tem permissão de administrador.' });
 
       if (req.method === 'GET' && p === '/api/admin/state') {
         return sendJson(res, 200, {
           ok: true,
+          csrfToken: issueCsrf(),
+          adminUser: { name: user.name, handle: user.handle, avatar: user.avatar },
           ps5Config,
           packagesConfig,
           queueSummary: queueSummary(false),
@@ -993,6 +1023,12 @@ async function handler(req, res) {
         });
       }
 
+      if (req.method === 'POST') {
+        if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'Origem inválida.' });
+        if (!adminActionLimiter(user.uid)) return sendJson(res, 429, { error: 'Muitas ações seguidas. Aguarde 1 minuto.' });
+        if (!unsign(req.headers['x-csrf-token'], 'csrf')) return sendJson(res, 403, { error: 'csrf', message: 'Sessão expirada. Recarregue a página.' });
+      }
+
       if (req.method === 'POST' && p === '/api/admin/save') {
         const body = await readJson(req);
         const c = body.ps5Config || {};
@@ -1001,14 +1037,20 @@ async function handler(req, res) {
         };
         if (['online', 'busy', 'maintenance'].includes(c.consoleStatus)) ps5Config.consoleStatus = c.consoleStatus;
         if (['youtube', 'twitch', 'hls_webrtc'].includes(c.streamMode)) ps5Config.streamMode = c.streamMode;
-        if (typeof c.streamSourceUrl === 'string' && /^https:\/\//.test(c.streamSourceUrl.trim())) {
+        if (typeof c.streamSourceUrl === 'string' && c.streamSourceUrl.trim()) {
+          if (!isValidHttpsUrl(c.streamSourceUrl, ALLOWED_STREAM_HOSTS)) {
+            return sendJson(res, 400, { error: 'URL de stream deve ser HTTPS do YouTube, Twitch ou VDO.Ninja.' });
+          }
           ps5Config.streamSourceUrl = clip(c.streamSourceUrl, 400);
         }
         str('streamTitle', 100);
         str('ps5LocalIp', 45);
         str('remotePlayPin', 20);
         str('connectionMode', 30);
-        if (typeof c.parsecInviteUrl === 'string' && /^https:\/\//.test(c.parsecInviteUrl.trim())) {
+        if (typeof c.parsecInviteUrl === 'string' && c.parsecInviteUrl.trim()) {
+          if (!isValidHttpsUrl(c.parsecInviteUrl)) {
+            return sendJson(res, 400, { error: 'Link Parsec/WebRTC deve começar com https:// válido.' });
+          }
           ps5Config.parsecInviteUrl = clip(c.parsecInviteUrl, 300);
         }
         str('pixKey', 77);
