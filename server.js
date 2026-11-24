@@ -116,7 +116,7 @@ const packagesConfig = {
     trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 3.8 },
     hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, bonusMinutes: 0, priceBRL: 22.75 },
     combo_2h: { id: 'combo_2h', name: 'Combo Heist Leonida (2h10)', minutes: 120, bonusMinutes: 10, priceBRL: 44.9 },
-    pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (4h25)', minutes: 240, bonusMinutes: 25, priceBRL: 86.9 }
+    pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (5h)', minutes: 240, bonusMinutes: 60, priceBRL: 86.9 }
   }
 };
 

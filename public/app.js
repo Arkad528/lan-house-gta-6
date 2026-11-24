@@ -8,14 +8,14 @@
     trial_10m: { name: 'Teste Rápido (10 min)', short: '10 min', minutes: 10, bonus: 0, price: 3.8 },
     hour_1h: { name: 'Sessão 1 Hora', short: '1 hora', minutes: 60, bonus: 0, price: 22.75 },
     combo_2h: { name: 'Combo Heist Leonida (2h10)', short: '2h10', minutes: 120, bonus: 10, price: 44.9 },
-    pass_4h: { name: 'Passaporte Madrugada (4h25)', short: '4h25', minutes: 240, bonus: 25, price: 86.9 }
+    pass_4h: { name: 'Passaporte Madrugada (5h)', short: '5 horas', minutes: 240, bonus: 60, price: 86.9 }
   };
 
   const BUTTON_LABELS = {
     trial_10m: 'Jogar 10 minutos',
     hour_1h: 'Jogar 1 hora',
     combo_2h: 'Jogar Combo 2h10',
-    pass_4h: 'Jogar 4h25'
+    pass_4h: 'Jogar 5 horas'
   };
 
   const AUTH_ERRORS = {
@@ -322,7 +322,7 @@
     $('r-name').textContent = c.pkg.name;
     $('r-price').textContent = money(c.pkgPix);
     $('r-bonus-row').classList.toggle('hidden', !c.pkg.bonus);
-    $('r-bonus').textContent = `Bônus +${c.pkg.bonus} min`;
+    $('r-bonus').textContent = c.pkg.bonus >= 60 ? `Bônus +${duration(c.pkg.bonus)}` : `Bônus +${c.pkg.bonus} min`;
     $('r-bump-row').classList.toggle('hidden', !state.bump);
     $('r-bump').textContent = '+ ' + money(c.bumpPix);
     $('r-crypto-row').classList.toggle('hidden', !isCrypto());
