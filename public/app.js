@@ -8,14 +8,16 @@
     trial_5m: { name: 'Teste Grátis (5 min)', short: '5 min', minutes: 5, bonus: 0, price: 0 },
     hour_1h: { name: 'Sessão 1 Hora', short: '1 hora', minutes: 60, bonus: 0, price: 22.75 },
     combo_2h: { name: 'Combo Heist Leonida (2h15)', short: '2h15', minutes: 120, bonus: 15, price: 44.9 },
-    pass_4h: { name: 'Passaporte Madrugada (5h)', short: '5 horas', minutes: 240, bonus: 60, price: 86.9 }
+    pass_4h: { name: 'Passaporte 4h45', short: '4h45', minutes: 240, bonus: 45, price: 86.9 },
+    pass_8h: { name: 'Maratona 10h + Save Próprio', short: '10h + Save', minutes: 480, bonus: 120, price: 164.9 }
   };
 
   const BUTTON_LABELS = {
     trial_5m: 'Testar 5 min grátis',
     hour_1h: 'Jogar 1 hora',
     combo_2h: 'Jogar Combo 2h15',
-    pass_4h: 'Jogar 5 horas'
+    pass_4h: 'Jogar 4h45',
+    pass_8h: 'Jogar 10h + Save'
   };
 
   const AUTH_ERRORS = {
