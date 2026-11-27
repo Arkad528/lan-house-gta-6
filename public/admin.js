@@ -105,7 +105,7 @@
     $('cfg-mode').value = c.connectionMode || 'parsec_chiaki';
     $('cfg-parsec').value = c.parsecInviteUrl || '';
 
-    $('p-10m').value = p.packages.trial_10m.priceBRL;
+    $('p-5m').value = p.packages.trial_5m.priceBRL;
     $('p-1h').value = p.packages.hour_1h.priceBRL;
     $('p-2h').value = p.packages.combo_2h.priceBRL;
     $('p-4h').value = p.packages.pass_4h.priceBRL;
@@ -223,7 +223,7 @@
         ipnSecret: $('cfg-np-ipn').value.trim()
       },
       prices: {
-        trial_10m: parseFloat($('p-10m').value),
+        trial_5m: parseFloat($('p-5m').value),
         hour_1h: parseFloat($('p-1h').value),
         combo_2h: parseFloat($('p-2h').value),
         pass_4h: parseFloat($('p-4h').value),

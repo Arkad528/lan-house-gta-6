@@ -128,7 +128,7 @@ const packagesConfig = {
   npFeeRate: 0.005,  // 0,5% taxa NOWPayments embutida no preço Crypto
   usdtRateBRL: 5.0,
   packages: {
-    trial_10m: { id: 'trial_10m', name: 'Teste Rápido (10 min)', minutes: 10, bonusMinutes: 0, priceBRL: 3.8 },
+    trial_5m: { id: 'trial_5m', name: 'Teste Grátis (5 min)', minutes: 5, bonusMinutes: 0, priceBRL: 0 },
     hour_1h: { id: 'hour_1h', name: 'Sessão 1 Hora', minutes: 60, bonusMinutes: 0, priceBRL: 22.75 },
     combo_2h: { id: 'combo_2h', name: 'Combo Heist Leonida (2h15)', minutes: 120, bonusMinutes: 15, priceBRL: 44.9 },
     pass_4h: { id: 'pass_4h', name: 'Passaporte Madrugada (5h)', minutes: 240, bonusMinutes: 60, priceBRL: 86.9 }
@@ -141,6 +141,8 @@ function grossUp(amount, feeRate) {
 
 const orders = new Map(); // orderId -> order
 const viewers = new Map(); // clientId -> lastSeen
+const freeTrialUsedUids = new Set();
+const freeTrialUsedIps = new Set();
 
 // ---------------------------------------------------------------------------
 // Estado compartilhado opcional (Upstash Redis / Vercel KV via REST, 0 deps)
@@ -189,6 +191,8 @@ async function syncStateFromKv(force) {
         orders.set(so.orderId, local ? { ...so, pixQrBase64: local.pixQrBase64 || null } : so);
       }
     }
+    if (Array.isArray(snap.freeTrialUsedUids)) snap.freeTrialUsedUids.forEach((u) => freeTrialUsedUids.add(u));
+    if (Array.isArray(snap.freeTrialUsedIps)) snap.freeTrialUsedIps.forEach((i) => freeTrialUsedIps.add(i));
   } catch (err) {
     console.error('[playgta6] KV load erro:', err.message);
   }
@@ -208,7 +212,9 @@ async function persistStateToKv() {
       },
       orders: [...orders.values()]
         .slice(-150)
-        .map(({ pixQrBase64, ...rest }) => rest)
+        .map(({ pixQrBase64, ...rest }) => rest),
+      freeTrialUsedUids: [...freeTrialUsedUids].slice(-500),
+      freeTrialUsedIps: [...freeTrialUsedIps].slice(-500)
     };
     await fetch(ENV.KV_REST_API_URL, {
       method: 'POST',
@@ -832,13 +838,31 @@ function calculateOrder(packageId, includeBump, paymentMethod) {
   const cryptoOpt = resolveCryptoOption(paymentMethod);
   const isCrypto = !!cryptoOpt;
 
+  if (baseSubtotal === 0) {
+    return {
+      packageId: pkg.id,
+      packageName: pkg.name,
+      baseMinutes: pkg.minutes,
+      bonusMinutes: pkg.bonusMinutes,
+      bumpMinutes,
+      totalMinutes: pkg.minutes + pkg.bonusMinutes + bumpMinutes,
+      subtotalBRL: 0,
+      discountBRL: 0,
+      finalPriceBRL: 0,
+      finalUSDT: '0.00',
+      paymentMethod: 'free',
+      cryptoNetwork: null,
+      isCrypto: false
+    };
+  }
+
   if (isCrypto && !CRYPTO_ENABLED) {
     const err = new Error('Pagamento em Crypto disponível em breve. Utilize PIX.');
     err.isSafeUserError = true;
     throw err;
   }
 
-  if (isCrypto && pkg.id === 'trial_10m' && !includeBump) {
+  if (isCrypto && pkg.id === 'trial_5m' && !includeBump) {
     const err = new Error('Pagamento em Crypto disponível a partir do plano de 1 hora.');
     err.isSafeUserError = true;
     throw err;
@@ -1240,6 +1264,24 @@ async function handler(req, res) {
         cryptoWallet: ''
       };
 
+      if (order.finalPriceBRL === 0) {
+        if (!isAdminUser(user) && (freeTrialUsedUids.has(user.uid) || freeTrialUsedIps.has(ip))) {
+          return sendJson(res, 403, { error: 'Você já usou seu teste grátis de 5 minutos. Escolha um plano para continuar jogando!' });
+        }
+        const alreadyInSession =
+          ps5Config.activePlayer?.uid === user.uid || ps5Config.queue.some((q) => q.uid === user.uid);
+        if (alreadyInSession) {
+          return sendJson(res, 429, { error: 'Você já tem uma sessão ativa ou na fila.' });
+        }
+        freeTrialUsedUids.add(user.uid);
+        freeTrialUsedIps.add(ip);
+        order.pixSource = 'free';
+        orders.set(orderId, order);
+        enqueueOrActivate(order);
+        await persistStateToKv();
+        return sendJson(res, 200, { ok: true, order: publicOrder(order) });
+      }
+
       if (!order.isCrypto) {
         if (!mpEnabled()) {
           return sendJson(res, 503, { error: 'PIX (Mercado Pago) não está configurado no servidor. Adicione MP_ACCESS_TOKEN na Vercel.' });
@@ -1303,6 +1345,10 @@ async function handler(req, res) {
             cryptoWallet: ''
           };
           orders.set(id, o);
+          if (o.pixSource === 'free') {
+            if (Date.now() - createdMs > o.totalMinutes * 60_000) o.status = 'completed';
+            else enqueueOrActivate(o);
+          }
         }
       }
 
@@ -1499,7 +1545,8 @@ async function handler(req, res) {
         const prices = body.prices || {};
         for (const id of Object.keys(packagesConfig.packages)) {
           const v = Number(prices[id]);
-          if (Number.isFinite(v) && v > 0 && v < 10000) packagesConfig.packages[id].priceBRL = Math.round(v * 100) / 100;
+          const minAllowed = id === 'trial_5m' ? 0 : 0.01;
+          if (Number.isFinite(v) && v >= minAllowed && v < 10000) packagesConfig.packages[id].priceBRL = Math.round(v * 100) / 100;
         }
         const bump = Number(prices.bumpPriceBRL);
         if (Number.isFinite(bump) && bump >= 0 && bump < 10000) packagesConfig.bumpPriceBRL = Math.round(bump * 100) / 100;

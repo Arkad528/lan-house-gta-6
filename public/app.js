@@ -5,14 +5,14 @@
   const $$ = (sel) => document.querySelectorAll(sel);
 
   const PKG = {
-    trial_10m: { name: 'Teste Rápido (10 min)', short: '10 min', minutes: 10, bonus: 0, price: 3.8 },
+    trial_5m: { name: 'Teste Grátis (5 min)', short: '5 min', minutes: 5, bonus: 0, price: 0 },
     hour_1h: { name: 'Sessão 1 Hora', short: '1 hora', minutes: 60, bonus: 0, price: 22.75 },
     combo_2h: { name: 'Combo Heist Leonida (2h15)', short: '2h15', minutes: 120, bonus: 15, price: 44.9 },
     pass_4h: { name: 'Passaporte Madrugada (5h)', short: '5 horas', minutes: 240, bonus: 60, price: 86.9 }
   };
 
   const BUTTON_LABELS = {
-    trial_10m: 'Jogar 10 minutos',
+    trial_5m: 'Testar 5 min grátis',
     hour_1h: 'Jogar 1 hora',
     combo_2h: 'Jogar Combo 2h15',
     pass_4h: 'Jogar 5 horas'
@@ -441,13 +441,17 @@
     $$('[data-price]').forEach((node) => {
       const id = node.dataset.price;
       const p = PKG[id].price;
-      const useCrypto = isCrypto() && id !== 'trial_10m';
+      if (p === 0) {
+        node.textContent = 'Grátis';
+        return;
+      }
+      const useCrypto = isCrypto() && id !== 'trial_5m';
       const shown = useCrypto ? grossUp(p * (1 - state.cryptoRate), state.npFeeRate) : grossUp(p, state.mpFeeRate);
       node.textContent = money(shown);
     });
-    const trialRate = document.querySelector('.plan[data-pkg="trial_10m"] .plan-rate');
+    const trialRate = document.querySelector('.plan[data-pkg="trial_5m"] .plan-rate');
     if (trialRate) {
-      trialRate.textContent = isCrypto() ? 'Apenas PIX (Crypto a partir de 1h)' : 'R$ 23,04/h';
+      trialRate.textContent = PKG.trial_5m.price === 0 ? '1 teste grátis por conta' : `${money(grossUp(PKG.trial_5m.price, state.mpFeeRate) * 12)}/h`;
     }
     $('toggle-pix').classList.toggle('active', !isCrypto());
     $('toggle-crypto').classList.toggle('active', isCrypto());
@@ -563,7 +567,7 @@
 
     $('bump-price').textContent = '+ ' + money(c.bumpPix);
     $('r-name').textContent = c.pkg.name;
-    $('r-price').textContent = money(c.pkgPix);
+    $('r-price').textContent = c.pkgPix === 0 ? 'Grátis' : money(c.pkgPix);
     $('r-bonus-row').classList.toggle('hidden', !c.pkg.bonus);
     $('r-bonus').textContent = c.pkg.bonus >= 60 ? `Bônus +${duration(c.pkg.bonus)}` : `Bônus +${c.pkg.bonus} min`;
     $('r-bump-row').classList.toggle('hidden', !state.bump);
@@ -571,9 +575,9 @@
     $('r-crypto-row').classList.toggle('hidden', !isCrypto());
     $('r-crypto').textContent = '- ' + money(c.discount);
     $('r-time').textContent = duration(c.minutes);
-    $('r-total').textContent = money(c.total);
+    $('r-total').textContent = c.total === 0 ? 'Grátis' : money(c.total);
     const selCoin2 = state.cryptoOptions.find((x) => x.id === state.coin) || { label: state.coin.toUpperCase(), network: '' };
-    $('r-usdt').classList.toggle('hidden', !isCrypto());
+    $('r-usdt').classList.toggle('hidden', !isCrypto() || c.total === 0);
     $('r-usdt').textContent = `≈ ${(c.total / state.usdtRate).toFixed(2)} USDT (${selCoin2.label} · ${selCoin2.network})`;
 
     const offline = !!(state.pub && state.pub.emergencyOffline);
@@ -583,10 +587,14 @@
     submitBtn.textContent = offline
       ? 'Sistema desligado (emergência)'
       : state.user
-      ? `${queued ? 'Garantir vaga na fila' : 'Gerar pagamento'} · ${money(c.total)}`
+      ? c.total === 0
+        ? queued
+          ? 'Entrar na fila grátis'
+          : 'Jogar 5 min grátis'
+        : `${queued ? 'Garantir vaga na fila' : 'Gerar pagamento'} · ${money(c.total)}`
       : 'Entrar para continuar';
 
-    $('cta-title').textContent = `${c.pkg.name} por ${money(c.total)}`;
+    $('cta-title').textContent = c.total === 0 ? `${c.pkg.name} — Grátis` : `${c.pkg.name} por ${money(c.total)}`;
   }
 
   function renderAll() {
@@ -699,19 +707,25 @@
     $('order-title').textContent = `Pedido #${order.orderId}`;
     $('o-plan').textContent = order.packageName;
     $('o-time').textContent = duration(order.totalMinutes);
-    $('o-total').textContent = order.isCrypto
-      ? order.cryptoPayAmount
-        ? `${order.cryptoPayAmount} ${order.cryptoPayCurrency}`
-        : `${money(order.finalPriceBRL)} · ${order.finalUSDT} USDT`
-      : money(order.finalPriceBRL);
+    $('o-total').textContent =
+      order.finalPriceBRL === 0
+        ? 'Grátis'
+        : order.isCrypto
+        ? order.cryptoPayAmount
+          ? `${order.cryptoPayAmount} ${order.cryptoPayCurrency}`
+          : `${money(order.finalPriceBRL)} · ${order.finalUSDT} USDT`
+        : money(order.finalPriceBRL);
     const netSuffix = order.cryptoNetwork ? ` (Rede ${order.cryptoNetwork})` : '';
-    $('order-method-label').textContent = order.isCrypto
-      ? order.cryptoPayAmount
-        ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency}${netSuffix}`
-        : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}${netSuffix}`
-      : order.mpMode === 'sandbox'
-      ? 'PIX Mercado Pago (MODO TESTE — use Access Token APP_USR- para banco real)'
-      : 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola';
+    $('order-method-label').textContent =
+      order.finalPriceBRL === 0
+        ? 'Teste grátis · Liberação automática'
+        : order.isCrypto
+        ? order.cryptoPayAmount
+          ? `Envie exatamente ${order.cryptoPayAmount} ${order.cryptoPayCurrency}${netSuffix}`
+          : `Envie ${order.finalUSDT} USDT equivalentes em ${order.paymentMethod.toUpperCase()}${netSuffix}`
+        : order.mpMode === 'sandbox'
+        ? 'PIX Mercado Pago (MODO TESTE — use Access Token APP_USR- para banco real)'
+        : 'PIX Mercado Pago · Escaneie o QR Code ou use Copia e Cola';
     $('o-code-label').textContent = order.isCrypto
       ? `Endereço ${order.cryptoPayCurrency || order.paymentMethod.toUpperCase()}${netSuffix}`
       : 'PIX copia e cola';
@@ -749,6 +763,7 @@
     }
     $('btn-demo-pay').classList.toggle('hidden', !state.demoMode);
     updateOrderStatus(order);
+    if (order.status === 'active' || order.status === 'queued') loadConfig();
     openModal('order-modal');
     startPolling();
   }
